@@ -117,5 +117,5 @@ ENV/
 
 Handwritten Digit Classification/src/data/*
 Handwritten Digit Classification/jupyter_notebooks/data/*
-
+Handwritten Digit Classification/test_files/data/*
 
