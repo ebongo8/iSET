@@ -13,10 +13,6 @@ def get_device_type(windows_os=False):
         return "mps" if torch.backends.mps.is_available() else "cpu"
 
 
-# def get_device(device_type):
-#     return torch.device(device_type)
-
-
 def get_model():
     device_type = get_device_type(windows_os=False)
     device = torch.device(device_type)
@@ -42,6 +38,7 @@ def get_dataloaders():
     return (
         DataLoader(train_dataset, batch_size=32, shuffle=True),
         DataLoader(test_dataset, batch_size=32, shuffle=False),
+    )
 
 
 def prepare_image(image_path, device, img_size=(28, 28)):
