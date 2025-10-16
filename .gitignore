@@ -115,4 +115,7 @@ ENV/
 # PyCharm 
 .idea
 
-data/*
+Handwritten Digit Classification/src/data/*
+Handwritten Digit Classification/jupyter_notebooks/data/*
+
+
