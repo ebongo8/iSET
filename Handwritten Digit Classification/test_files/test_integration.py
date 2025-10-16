@@ -8,10 +8,12 @@ def test_training_loop_integrity():
     """
     TC-IT-01 Training Loop Integrity: Capture model weights before and after a single training step (optimizer.step()).
     Expected result: The weights after the step are different from the weights before the step.
-    # TODO test is failing. Need to fix.
     """
+    # TODO Heather review/update code below
+
     device_type = get_device_type(windows_os=False)
     device = torch.device(device_type)
+    # TODO figure out if we need to get the trained model or not (maybe use load_trained_model function in utils)
     model = get_model()
     train_loader, _ = get_dataloaders()
 
@@ -38,6 +40,9 @@ def test_save_load_integrity(tmp_path):
 
     Expected results: The weights of the new model are identical to the weights of the original model.
     """
+    # TODO Erin review/update code below
+    # TODO figure out if we need to get the trained model or not (maybe use load_trained_model function in utils)
+
     model = get_model()
     save_path = tmp_path / "model.pth"
     torch.save(model.state_dict(), save_path)
