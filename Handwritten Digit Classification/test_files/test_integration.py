@@ -1,6 +1,7 @@
 import torch
 import copy
-from test_files.utils import get_model, get_dataloaders, get_device_type
+import os
+from test_files.utils import get_model, get_dataloaders, get_device_type, load_trained_model
 from src.classifier_model import ImageClassifier
 
 
@@ -40,19 +41,31 @@ def test_save_load_integrity(tmp_path):
 
     Expected results: The weights of the new model are identical to the weights of the original model.
     """
-    # TODO Erin review/update code below
     # TODO figure out if we need to get the trained model or not (maybe use load_trained_model function in utils)
-
-    model = get_model()
-    save_path = tmp_path / "model.pth"
-    torch.save(model.state_dict(), save_path)
 
     device_type = get_device_type()
     device = torch.device(device_type)
-    new_model = ImageClassifier().to(device)
-    new_model.load_state_dict(torch.load(save_path, map_location=device_type))
 
-    new_model.load_state_dict(torch.load(save_path))
+    # Create and save an untrained model
+    new_model = get_model()
+    save_path = tmp_path / "model.pth"
+    torch.save(new_model.state_dict(), save_path)
 
-    for p1, p2 in zip(model.parameters(), new_model.parameters()):
+    # Create and save an untrained model
+    new_model = get_model()
+    save_path = tmp_path / "model.pth"
+    torch.save(new_model.state_dict(), save_path)
+    # Load the trained model
+    current_dir = os.getcwd()
+    project_root = os.path.dirname(current_dir)
+    path_to_saved_model = os.path.join(project_root, "src", "model_state.pt")
+
+    trained_model = load_trained_model(path_to_saved_model, device_type)
+
+    # Ensure both models are on the same device
+    # TODO why do I need these lines for it to work?
+    new_model = new_model.to(device)
+    trained_model = trained_model.to(device)
+
+    for p1, p2 in zip(new_model.parameters(), trained_model.parameters()):
         assert torch.equal(p1, p2), "Weights must match after load"

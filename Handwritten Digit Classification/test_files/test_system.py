@@ -1,12 +1,13 @@
 import torch
 import numpy as np
-# from captum.attr import Saliency, LayerGradCam
-from test_files.utils import get_model, get_dataloaders, get_device_type
+from captum.attr import Saliency, LayerGradCam
+from test_files.utils import get_model, get_dataloaders, get_device_type, load_trained_model
 import pytest
-# import torch.nn.functional as F
+import torch.nn.functional as F
 # from torchvision import transforms
 # from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
+import os
 
 
 def test_performance():
@@ -43,40 +44,65 @@ def test_explanation_generation():
     Expected result: A 28x28 heatmap image is successfully generated without errors.
     """
     # TODO Erin review/update code below
+    # TODO figure out if we need to get the trained model or not (maybe use load_trained_model function in utils)
+    # Setup device and load trained model
     device_type = get_device_type(windows_os=False)
     device = torch.device(device_type)
-    # TODO figure out if we need to get the trained model or not (maybe use load_trained_model function in utils)
-    model = get_model()
+
+    # Load trained model (already saved in src/model_state.pt)
+    # Load the trained model
+    current_dir = os.getcwd()
+    project_root = os.path.dirname(current_dir)
+    path_to_saved_model = os.path.join(project_root, "src", "model_state.pt")
+
+    model = load_trained_model(path_to_saved_model, device_type)
+    model.to(device)
+    model.eval()
+
+    # Load test data
     _, test_loader = get_dataloaders()
-    saliency = Saliency(model)
-
     images, labels = next(iter(test_loader))
-    image = images[0].unsqueeze(0).to(device)
-    # images, labels = next(iter(test_loader))
-    # images, labels = images.to(device), labels.to(device)
-    image.requires_grad = True
-    output = model(image)
-    pred_class = output.argmax(dim=1)
+    images, labels = images.to(device), labels.to(device)
 
-    attr = saliency.attribute(image, target=pred_class)
+    with torch.no_grad():
+        outputs = model(images)
+        preds = outputs.argmax(dim=1)
 
-    # idx = (pred == labels).nonzero(as_tuple=True)[0][0]
-    # image = images[idx].unsqueeze(0)
-    # target = pred[idx].item()
-    #
-    # gradcam = LayerGradCam(model, model.features[-1] if hasattr(model, "features") else list(model.children())[-1])
-    # attr = gradcam.attribute(image, target=target)
-    # attr = torch.nn.functional.interpolate(attr, size=(28, 28), mode="bilinear")
-    # heatmap = attr.squeeze().cpu().detach().numpy()
-    #
-    # plt.imshow(heatmap, cmap="hot")
-    # plt.axis("off")
-    # plt.title("Grad-CAM Heatmap")
-    # plt.savefig("gradcam_heatmap.png")
-    #
-    # assert heatmap.shape == (28, 28), "Expected 28x28 Grad-CAM heatmap."
+    # Select a correctly classified sample
+    correct_indices = (preds == labels).nonzero(as_tuple=True)[0]
+    assert len(correct_indices) > 0, "No correctly classified images found."
+    idx = correct_indices[0].item()
+    image = images[idx].unsqueeze(0)
+    target_class = preds[idx].item()
 
-    assert attr.shape == (1, 1, 28, 28)
+    # Find last convolutional layer dynamically
+    last_conv_layer = None
+    for layer in model.modules():
+        if isinstance(layer, torch.nn.Conv2d):
+            last_conv_layer = layer
+    assert last_conv_layer is not None, "No Conv2d layer found for Grad-CAM."
+
+    # Grad-CAM
+    gradcam = LayerGradCam(model, last_conv_layer)
+    attr = gradcam.attribute(image, target=target_class)
+
+    # Ensure correct shape before interpolation
+    if attr.dim() == 4:
+        attr = torch.nn.functional.interpolate(attr, size=(28, 28), mode="bilinear", align_corners=False)
+    else:
+        raise ValueError(f"Expected 4D Grad-CAM output, got shape {attr.shape}")
+
+    # Convert to numpy heatmap
+    heatmap = attr.squeeze().cpu().detach().numpy()
+    assert heatmap.shape == (28, 28), "Expected 28x28 Grad-CAM heatmap."
+
+    # Save visualization
+    plt.imshow(heatmap, cmap="hot")
+    plt.axis("off")
+    plt.title("Grad-CAM Heatmap")
+    plt.savefig("gradcam_heatmap.png")
+
+    assert attr.shape == (1, 1, 28, 28), "Expected attribution shape (1, 1, 28, 28)."
 
 
 def test_explanation_accuracy():
@@ -91,46 +117,65 @@ def test_explanation_accuracy():
     device = torch.device(device_type)
     # TODO figure out if we need to get the trained model or not (maybe use load_trained_model function in utils)
 
-    model = get_model()
-    _, test_loader = get_dataloaders()
+    # Use the trained model for a realistic test
+    current_dir = os.getcwd()
+    project_root = os.path.dirname(current_dir)
+    path_to_saved_model = os.path.join(project_root, "src", "model_state.pt")
+    model = load_trained_model(path_to_saved_model, device_type)
     model.eval()
 
-    saliency = Saliency(model)
+    # Get a batch from test data
+    _, test_loader = get_dataloaders()
     images, labels = next(iter(test_loader))
     image = images[0].unsqueeze(0).to(device)
     label = labels[0].item()
 
+    # Forward pass to get prediction
     output = model(image)
     pred_class = output.argmax(dim=1).item()
+
+    # Only test on correctly classified images
     if pred_class != label:
         pytest.skip("Skipping: first image not correctly classified.")
 
+    # Generate saliency map
+    saliency = Saliency(model)
     attr = saliency.attribute(image, target=pred_class).abs().squeeze().cpu().numpy()
+
+    # Identify top 20% salient pixels
     flat = attr.flatten()
     threshold = np.percentile(flat, 80)
-
     salient_mask = (attr >= threshold)
+
+    # Create random mask for comparison
     random_mask = np.random.rand(*attr.shape) >= 0.8
 
+    # Prepare masked images
     image_np = image.squeeze().cpu().numpy()
     salient_masked = image_np.copy()
     random_masked = image_np.copy()
+
     salient_masked[salient_mask] = 0
     random_masked[random_mask] = 0
 
-    def get_conf(img):
-        tensor = torch.tensor(img).unsqueeze(0).unsqueeze(0).float().to(device)
+    # Helper to compute confidence for a given image
+    def get_conf(img_np):
+        tensor = torch.tensor(img_np).unsqueeze(0).unsqueeze(0).float().to(device)
         out = model(tensor)
         return F.softmax(out, dim=1)[0, pred_class].item()
 
+    # Compute confidences
     orig_conf = get_conf(image_np)
     salient_conf = get_conf(salient_masked)
     random_conf = get_conf(random_masked)
 
     print(f"Original: {orig_conf:.3f}, Salient masked: {salient_conf:.3f}, Random masked: {random_conf:.3f}")
 
-    assert salient_conf < random_conf, \
-        f"Expected salient masking to reduce confidence more (salient={salient_conf:.3f}, random={random_conf:.3f})."
+    # Assertion — saliency masking should drop confidence more than random masking
+    assert salient_conf < random_conf, (
+        f"Expected salient masking to reduce confidence more "
+        f"(salient={salient_conf:.3f}, random={random_conf:.3f})."
+    )
 
 
 def test_counterfactual_robustness():
