@@ -1,6 +1,7 @@
 import torch
 import copy
 import os
+import pandas as pd
 from test_files.utils import get_model, get_dataloaders, get_device_type, load_trained_model
 from src.classifier_model import ImageClassifier
 
@@ -41,31 +42,40 @@ def test_save_load_integrity(tmp_path):
 
     Expected results: The weights of the new model are identical to the weights of the original model.
     """
-    # TODO figure out if we need to get the trained model or not (maybe use load_trained_model function in utils)
-
     device_type = get_device_type()
     device = torch.device(device_type)
 
-    # Create and save an untrained model
-    new_model = get_model()
-    save_path = tmp_path / "model.pth"
-    torch.save(new_model.state_dict(), save_path)
+    # Step 1: Create the original model
+    original_model = get_model().to(device)
 
-    # Create and save an untrained model
-    new_model = get_model()
-    save_path = tmp_path / "model.pth"
-    torch.save(new_model.state_dict(), save_path)
-    # Load the trained model
-    current_dir = os.getcwd()
-    project_root = os.path.dirname(current_dir)
-    path_to_saved_model = os.path.join(project_root, "src", "model_state.pt")
+    # Step 2: Save the model’s weights
+    save_path = tmp_path / "model_state_test.pth"
+    torch.save(original_model.state_dict(), save_path)
 
-    trained_model = load_trained_model(path_to_saved_model, device_type)
+    # Step 3: Create a new (empty) model and load the saved weights
+    new_model = get_model().to(device)
+    new_model.load_state_dict(torch.load(save_path, map_location=device))
 
-    # Ensure both models are on the same device
-    # TODO why do I need these lines for it to work?
-    new_model = new_model.to(device)
-    trained_model = trained_model.to(device)
+    # Step 4: Compare all weights between original and loaded models
+    for p1, p2 in zip(original_model.parameters(), new_model.parameters()):
+        assert torch.equal(p1, p2), "Weights must match after save/load integrity test"
 
-    for p1, p2 in zip(new_model.parameters(), trained_model.parameters()):
-        assert torch.equal(p1, p2), "Weights must match after load"
+    # Step 5: Export some sample weights to CSV for visual confirmation
+    csv_path = "model_weights_comparison.csv"
+    rows = []
+    for (name, orig_param), (_, loaded_param) in zip(original_model.state_dict().items(),
+                                                    new_model.state_dict().items()):
+        orig_vals = orig_param.flatten().cpu().numpy()
+        new_vals = loaded_param.flatten().cpu().numpy()
+        for i in range(min(5, len(orig_vals))):  # limit to 5 entries per layer
+            rows.append({
+                "Layer": name,
+                "Index": i,
+                "Original_Model_Weights": float(orig_vals[i]),
+                "New_Model_Weights": float(new_vals[i]),
+                "Match": float(orig_vals[i]) == float(new_vals[i])
+            })
+
+    df = pd.DataFrame(rows)
+    df.to_csv(csv_path, index=False)
+    print(f"\nWeights comparison saved to: {csv_path}")

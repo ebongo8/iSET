@@ -115,7 +115,9 @@ ENV/
 # PyCharm 
 .idea
 
+# iSET Specific
 Handwritten Digit Classification/src/data/*
 Handwritten Digit Classification/jupyter_notebooks/data/*
 Handwritten Digit Classification/test_files/data/*
-
+Handwritten Digit Classification/test_files/model_weights_comparison.csv
+Handwritten Digit Classification/test_files/gradcam_heatmap.png
