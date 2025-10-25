@@ -43,8 +43,6 @@ def test_explanation_generation():
     generate a saliency map using Grad-CAM.
     Expected result: A 28x28 heatmap image is successfully generated without errors.
     """
-    # TODO Erin review/update code below
-    # TODO figure out if we need to get the trained model or not (maybe use load_trained_model function in utils)
     # Setup device and load trained model
     device_type = get_device_type(windows_os=False)
     device = torch.device(device_type)
@@ -112,69 +110,91 @@ def test_explanation_accuracy():
     Expected result: The prediction confidence (softmax output) drops significantly more when
     masking salient pixels vs. random pixels.
     """
-    # TODO Erin review/update code below
+    # Setup device and load trained model
     device_type = get_device_type(windows_os=False)
     device = torch.device(device_type)
-    # TODO figure out if we need to get the trained model or not (maybe use load_trained_model function in utils)
 
-    # Use the trained model for a realistic test
+    # Load trained model
     current_dir = os.getcwd()
     project_root = os.path.dirname(current_dir)
     path_to_saved_model = os.path.join(project_root, "src", "model_state.pt")
+
     model = load_trained_model(path_to_saved_model, device_type)
+    model.to(device)
     model.eval()
 
-    # Get a batch from test data
+    # Load test data
     _, test_loader = get_dataloaders()
     images, labels = next(iter(test_loader))
-    image = images[0].unsqueeze(0).to(device)
-    label = labels[0].item()
+    images, labels = images.to(device), labels.to(device)
 
-    # Forward pass to get prediction
-    output = model(image)
-    pred_class = output.argmax(dim=1).item()
+    with torch.no_grad():
+        outputs = model(images)
+        preds = outputs.argmax(dim=1)
 
-    # Only test on correctly classified images
-    if pred_class != label:
-        pytest.skip("Skipping: first image not correctly classified.")
+    # Select a correctly classified sample (same as TC-ST-02)
+    correct_indices = (preds == labels).nonzero(as_tuple=True)[0]
+    assert len(correct_indices) > 0, "No correctly classified images found."
+    idx = correct_indices[0].item()
+    image = images[idx].unsqueeze(0)
+    target_class = preds[idx].item()
 
-    # Generate saliency map
-    saliency = Saliency(model)
-    attr = saliency.attribute(image, target=pred_class).abs().squeeze().cpu().numpy()
+    # Get original confidence
+    with torch.no_grad():
+        orig_output = model(image)
+        orig_conf = torch.nn.functional.softmax(orig_output, dim=1)[0, target_class].item()
 
-    # Identify top 20% salient pixels
-    flat = attr.flatten()
-    threshold = np.percentile(flat, 80)
-    salient_mask = (attr >= threshold)
+    # Load Grad-CAM heatmap from TC-ST-02
+    heatmap = plt.imread("gradcam_heatmap.png")
+    if heatmap.ndim == 3:  # handle RGB PNGs
+        heatmap = heatmap[..., 0]
+    heatmap = torch.tensor(heatmap, dtype=torch.float32)
 
-    # Create random mask for comparison
-    random_mask = np.random.rand(*attr.shape) >= 0.8
+    # Normalize heatmap between 0 and 1
+    heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min())
 
-    # Prepare masked images
-    image_np = image.squeeze().cpu().numpy()
-    salient_masked = image_np.copy()
-    random_masked = image_np.copy()
+    # Flatten and get top 20% salient pixel indices
+    flat_heatmap = heatmap.flatten()
+    k = int(0.2 * flat_heatmap.numel())
+    topk_indices = torch.topk(flat_heatmap, k).indices
 
-    salient_masked[salient_mask] = 0
-    random_masked[random_mask] = 0
+    # Mask salient pixels (set to 0)
+    image_masked = image.clone()
+    flat_img = image_masked.view(-1)
+    flat_img[topk_indices] = 0.0
+    image_masked = flat_img.view_as(image_masked)
 
-    # Helper to compute confidence for a given image
-    def get_conf(img_np):
-        tensor = torch.tensor(img_np).unsqueeze(0).unsqueeze(0).float().to(device)
-        out = model(tensor)
-        return F.softmax(out, dim=1)[0, pred_class].item()
+    # Re-run prediction on masked image
+    with torch.no_grad():
+        out_salient_masked = model(image_masked)
+        # The model’s confidence in the original class after erasing the important pixels
+        conf_salient_masked = torch.nn.functional.softmax(out_salient_masked, dim=1)[0, target_class].item()
 
-    # Compute confidences
-    orig_conf = get_conf(image_np)
-    salient_conf = get_conf(salient_masked)
-    random_conf = get_conf(random_masked)
+    # Mask 20% random pixels for comparison
+    rand_indices = torch.randperm(flat_heatmap.numel())[:k]
+    image_random_masked = image.clone()
+    flat_img_rand = image_random_masked.view(-1)
+    flat_img_rand[rand_indices] = 0.0
+    image_random_masked = flat_img_rand.view_as(image_random_masked)
 
-    print(f"Original: {orig_conf:.3f}, Salient masked: {salient_conf:.3f}, Random masked: {random_conf:.3f}")
+    with torch.no_grad():
+        out_random_masked = model(image_random_masked)
+        conf_random_masked = torch.nn.functional.softmax(out_random_masked, dim=1)[0, target_class].item()
 
-    # Assertion — saliency masking should drop confidence more than random masking
-    assert salient_conf < random_conf, (
-        f"Expected salient masking to reduce confidence more "
-        f"(salient={salient_conf:.3f}, random={random_conf:.3f})."
+    # Assertions / Expectations
+    drop_salient = orig_conf - conf_salient_masked
+    drop_random = orig_conf - conf_random_masked
+
+    print(f"Original confidence: {orig_conf:.4f}")
+    print(f"Confidence after salient mask: {conf_salient_masked:.4f}")
+    print(f"Confidence after random mask: {conf_random_masked:.4f}")
+    print(f"Drop (salient): {drop_salient:.4f}, Drop (random): {drop_random:.4f}")
+
+    # Expected: confidence drop is greater for salient pixels
+    # The model’s confidence should fall more when you remove important pixels than when you remove random ones.
+    assert drop_salient > drop_random, (
+        f"Expected confidence drop to be larger for salient pixels "
+        f"({drop_salient:.4f}) than for random pixels ({drop_random:.4f})."
     )
 
 

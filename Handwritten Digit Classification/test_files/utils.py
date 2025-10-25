@@ -20,7 +20,8 @@ def get_model():
 
 
 def load_trained_model(path_to_saved_model, device_type):
-    model = ImageClassifier()
+    device = torch.device(device_type)
+    model = ImageClassifier().to(device)
     model.load_state_dict(torch.load(path_to_saved_model, map_location=device_type))
     model.eval()
     return model
