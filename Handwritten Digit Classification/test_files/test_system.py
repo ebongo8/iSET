@@ -4,7 +4,8 @@ from captum.attr import Saliency, LayerGradCam
 from test_files.utils import get_model, get_dataloaders, get_device_type, load_trained_model
 import pytest
 import torch.nn.functional as F
-# from torchvision import transforms
+from torchvision import transforms
+from PIL import Image, ImageDraw
 # from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import matplotlib.pyplot as plt
 import os
@@ -236,26 +237,37 @@ def test_counterfactual_robustness():
 def test_knowledge_limits():
     """
     TC-ST-05 Knowledge Limits Test: Input an image of the letter 'A'.
-    Expected result: The model's softmax output shows low confidence, with no single class having a probability > 0.5.
+    Expected result: The model's softmax output shows low confidence,
+    with no single class having a probability > 0.5.
     """
-    # TODO Erin review/update code below
     device_type = get_device_type(windows_os=False)
     device = torch.device(device_type)
-    # TODO figure out if we need to get the trained model or not (maybe use load_trained_model function in utils)
-
     model = get_model()
     model.eval()
 
-    from PIL import Image, ImageDraw
+    # Create a blank 28x28 grayscale (mode 'L') image with black background (color=0)
     img = Image.new("L", (28, 28), color=0)
+    # Draw a white letter "A" near the top-left of the image
     draw = ImageDraw.Draw(img)
     draw.text((4, 0), "A", fill=255)
+    # Visual confirmation of the test image
+    plt.imshow(img, cmap="gray")
+    plt.title("OOD Test Input ('A')")
+    plt.axis("off")
+    plt.show()
+
+    # Convert PIL image to PyTorch tensor and add batch dimension (1, 1, 28, 28)
     transform = transforms.ToTensor()
     img_tensor = transform(img).unsqueeze(0).to(device)
 
     with torch.no_grad():
+        # Get raw model outputs (logits)
         output = model(img_tensor)
+        # Convert logits → probabilities
         probs = F.softmax(output, dim=1).cpu().numpy()[0]
 
+    # Print highest predicted probability
     print(f"Max softmax prob: {probs.max():.3f}")
+    # Assert that the model is not overly confident on this out-of-distribution input.
+    # If any class has > 0.5 probability, the model may be overconfident and fail this test.
     assert probs.max() < 0.5, f"Model too confident on OOD input (max={probs.max():.2f})."
