@@ -2,36 +2,76 @@ import torch
 import torch.nn.functional as F
 from captum.attr import Saliency
 from torchvision import transforms
-from PIL import Image
+from PIL import Image, ImageOps
 import matplotlib.pyplot as plt
-from test_files.utils import get_model, get_device_type
+from test_files.utils import get_model, get_device_type, load_trained_model
+import os
+import numpy as np
 
 
 def test_meaningful_explanation():
     """
-    TC-UAT-01 Meaningful Explanation Test: The user submits an image of a handwritten '3'.
-     The system correctly classifies it and generates a saliency map.
-    Expected result: The user confirms the saliency map highlights the curved strokes of the '3',
-     making the decision process understandable.
+    TC-UAT-01 Meaningful Explanation Test:
+    The user submits an image of a handwritten '3'. The system correctly classifies it
+    and generates a saliency map.
+
+    Expected result: The user confirms the saliency map highlights the curved strokes
+    of the '3', making the decision process understandable.
     """
-    # TODO use prepare_image function in utils?
-    # TODO Erin review/update code below
+
+    # Setup
     device_type = get_device_type(windows_os=False)
     device = torch.device(device_type)
-    # TODO figure out if we need to get the trained model or not (maybe use load_trained_model function in utils)
-    model = get_model()
+
+    # Load trained model
+    current_dir = os.getcwd()
+    project_root = os.path.dirname(current_dir)
+    path_to_saved_model = os.path.join(project_root, "src", "model_state.pt")
+
+    model = load_trained_model(path_to_saved_model, device_type)
+    model.to(device)
     model.eval()
 
-    # Load user-provided image of a handwritten '3'
-    img = Image.open("user_input_3.png").convert("L")
+    # Load user-provided handwritten '3'
+    current_dir = os.getcwd()
+    project_root = os.path.dirname(current_dir)
+    img_path = os.path.join(project_root, "test_images", "3.png")
+
+    transparent_background = True
+    inverted = True
+
+    if transparent_background:
+        img = Image.open(img_path).convert("RGBA")
+        # Convert transparency to white background
+        background = Image.new("RGBA", img.size, (255, 255, 255, 255))
+        img = Image.alpha_composite(background, img)
+        # Convert to grayscale
+        img = img.convert("L")
+    else:
+        img = Image.open(img_path).convert("L")
+
+    if inverted:
+        # Invert colors (so digit becomes white, background black)
+        img = ImageOps.invert(img)
+        # Enhance contrast
+        img = ImageOps.autocontrast(img)
+
+    # Transform to match MNIST input
     transform = transforms.Compose([
         transforms.Resize((28, 28)),
-        transforms.ToTensor()
+        transforms.ToTensor(),
+        transforms.Normalize((0.1307,), (0.3081,))
     ])
+
     img_tensor = transform(img).unsqueeze(0).to(device)
     img_tensor.requires_grad = True
 
-    # Predict class
+    # Display the input image
+    plt.imshow(np.array(img), cmap="gray")
+    plt.axis("off")
+    plt.show()
+
+    # Predict
     output = model(img_tensor)
     pred_class = output.argmax(dim=1).item()
     print(f"Predicted digit: {pred_class}")
@@ -40,7 +80,21 @@ def test_meaningful_explanation():
     saliency = Saliency(model)
     attr = saliency.attribute(img_tensor, target=pred_class)
     heatmap = attr.squeeze().abs().cpu().detach().numpy()
+    heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min())  # normalize [0,1]
 
+    # Prepare original image for overlay display
+    img_for_display = img_tensor.squeeze().cpu().detach().numpy()
+    img_for_display = img_for_display * 0.3081 + 0.1307  # reverse normalization
+
+    # Show overlayed saliency map
+    plt.figure(figsize=(5, 5))
+    plt.imshow(img_for_display, cmap="gray")
+    plt.imshow(heatmap, cmap="hot", alpha=0.5)
+    plt.title(f"Saliency Map Overlay (Predicted: {pred_class})")
+    plt.axis("off")
+    plt.show()
+
+    # Save heatmap image
     plt.imshow(heatmap, cmap="hot")
     plt.axis("off")
     plt.title(f"Saliency Map for Predicted '{pred_class}'")
