@@ -3,6 +3,8 @@ from src.classifier_model import ImageClassifier
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 from PIL import Image
+import matplotlib.pyplot as plt
+from torchvision.transforms import ToPILImage
 
 
 def get_device_type(windows_os=False):
@@ -69,3 +71,36 @@ def prepare_image(image_path, device, img_size=(28, 28)):
     img_tensor = transform(img).unsqueeze(0).to(device)  # add batch dimension
 
     return img_tensor
+
+
+def get_mnist_image(index=1, train_data_set=True, show=True):
+    """
+    Load a single MNIST sample and return a PIL image + label.
+    This function is just a backup if we ever need to access and view images from the MNIST dataset.
+    """
+    # transform used by the dataset (converts PIL -> Tensor)
+    transform = transforms.Compose([
+        transforms.ToTensor()
+    ])
+
+    mnist_dataset = datasets.MNIST(
+        root="data",
+        train=train_data_set,
+        download=True,
+        transform=transform  # <-- actually using the variable here
+    )
+
+    img_tensor, label = mnist_dataset[index]  # tensor shape: [1,28,28], values in [0,1]
+    img_pil = ToPILImage()(img_tensor)         # convert back to PIL for display
+
+    if show:
+        plt.imshow(img_pil, cmap="gray")
+        plt.title(f"Label: {label}")
+        plt.axis("off")
+        plt.show()
+
+    return img_pil, label
+
+
+if __name__ == "__main__":
+    get_mnist_image()
