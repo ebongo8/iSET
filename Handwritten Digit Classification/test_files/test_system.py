@@ -67,10 +67,12 @@ def test_explanation_generation():
         outputs = model(images)
         preds = outputs.argmax(dim=1)
 
-    # Select a correctly classified sample
+    # Select a correctly classified sample of a specific number
+    desired_label = 7
     correct_indices = (preds == labels).nonzero(as_tuple=True)[0]
-    assert len(correct_indices) > 0, "No correctly classified images found."
-    idx = correct_indices[0].item()
+    specific_indices = [i.item() for i in correct_indices if labels[i] == desired_label]
+    assert len(specific_indices) > 0, f"No correctly classified images of {desired_label} found."
+    idx = specific_indices[0]  # pick the first matching sample
     image = images[idx].unsqueeze(0)
     target_class = preds[idx].item()
 
@@ -98,8 +100,9 @@ def test_explanation_generation():
     # Save visualization
     plt.imshow(heatmap, cmap="hot")
     plt.axis("off")
+    plt.subplots_adjust(top=0.9, bottom=0.1)
     plt.title("Grad-CAM Heatmap")
-    plt.savefig("gradcam_heatmap.png")
+    plt.savefig("gradcam_heatmap.png", bbox_inches='tight')
 
     assert attr.shape == (1, 1, 28, 28), "Expected attribution shape (1, 1, 28, 28)."
 
@@ -134,11 +137,21 @@ def test_explanation_accuracy():
         preds = outputs.argmax(dim=1)
 
     # Select a correctly classified sample (same as TC-ST-02)
+    desired_label = 7
     correct_indices = (preds == labels).nonzero(as_tuple=True)[0]
-    assert len(correct_indices) > 0, "No correctly classified images found."
-    idx = correct_indices[0].item()
+    specific_indices = [i.item() for i in correct_indices if labels[i] == desired_label]
+    assert len(specific_indices) > 0, f"No correctly classified images of {desired_label} found."
+
+    idx = specific_indices[0]  # pick the first matching sample
     image = images[idx].unsqueeze(0)
     target_class = preds[idx].item()
+
+    plt.imshow(image.squeeze().cpu(), cmap="gray")
+    plt.title(f"Original Image (Label={desired_label}, Pred={target_class})")
+    plt.axis("off")
+    plt.tight_layout()
+    plt.savefig(f"original_image_label{desired_label}.png", bbox_inches="tight")
+    plt.show()
 
     # Get original confidence
     with torch.no_grad():
@@ -159,9 +172,9 @@ def test_explanation_accuracy():
     k = int(0.2 * flat_heatmap.numel())
     topk_indices = torch.topk(flat_heatmap, k).indices
 
-    # Mask salient pixels (set to 0)
+    # Mask 20% salient pixels (set to 0)
     image_masked = image.clone()
-    flat_img = image_masked.view(-1)
+    flat_img = image_masked.flatten().clone()
     flat_img[topk_indices] = 0.0
     image_masked = flat_img.view_as(image_masked)
 
@@ -174,7 +187,7 @@ def test_explanation_accuracy():
     # Mask 20% random pixels for comparison
     rand_indices = torch.randperm(flat_heatmap.numel())[:k]
     image_random_masked = image.clone()
-    flat_img_rand = image_random_masked.view(-1)
+    flat_img_rand = image_random_masked.flatten().clone()
     flat_img_rand[rand_indices] = 0.0
     image_random_masked = flat_img_rand.view_as(image_random_masked)
 
@@ -186,10 +199,42 @@ def test_explanation_accuracy():
     drop_salient = orig_conf - conf_salient_masked
     drop_random = orig_conf - conf_random_masked
 
-    print(f"Original confidence: {orig_conf:.4f}")
-    print(f"Confidence after salient mask: {conf_salient_masked:.4f}")
-    print(f"Confidence after random mask: {conf_random_masked:.4f}")
-    print(f"Drop (salient): {drop_salient:.4f}, Drop (random): {drop_random:.4f}")
+    # Visual the images and confidences
+    fig, axs = plt.subplots(1, 3, figsize=(12, 4))
+
+    # Original image
+    axs[0].imshow(image.squeeze().cpu(), cmap="gray")
+    axs[0].axis("off")
+    axs[0].text(
+        0.5,-0.05, f"Conf={orig_conf:.3f}", ha='center', va='top', transform=axs[0].transAxes, fontsize=12
+    )
+    axs[0].set_title(f"Original (Label={desired_label})")
+
+    # Masked salient pixels
+    axs[1].imshow(image_masked.squeeze().cpu(), cmap="gray")
+    axs[1].axis("off")
+    axs[1].text(
+        0.5, -0.05, f"Conf={conf_salient_masked:.3f}", ha='center', va='top', transform=axs[1].transAxes, fontsize=12
+    )
+    axs[1].set_title("Salient Mask")
+
+    # Masked random pixels
+    axs[2].imshow(image_random_masked.squeeze().cpu(), cmap="gray")
+    axs[2].axis("off")
+    axs[2].text(
+        0.5, -0.05, f"Conf={conf_random_masked:.3f}", ha='center', va='top', transform=axs[2].transAxes, fontsize=12
+    )
+    axs[2].set_title("Random Mask")
+
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.9, bottom=0.1)
+    plt.savefig("masked_image_comparison.png", bbox_inches='tight')
+    plt.show()
+
+    print(f"Original confidence: {orig_conf:.5f}")
+    print(f"Confidence after salient mask: {conf_salient_masked:.5f}")
+    print(f"Confidence after random mask: {conf_random_masked:.5f}")
+    print(f"Drop (salient): {drop_salient:.5f}, Drop (random): {drop_random:.5f}")
 
     # Expected: confidence drop is greater for salient pixels
     # The model’s confidence should fall more when you remove important pixels than when you remove random ones.
@@ -204,14 +249,21 @@ def test_counterfactual_robustness():
     TC-ST-04 Counterfactual Robustness Test: Apply a small adversarial perturbation to a correctly classified image.
     Expected result: The model's prediction should remain unchanged. A flipped prediction indicates a vulnerability.
     """
-    # TODO Heather review/update code below
+    # Setup device and load trained model
     device_type = get_device_type(windows_os=False)
     device = torch.device(device_type)
-    # TODO figure out if we need to get the trained model or not (maybe use load_trained_model function in utils)
-    model = get_model()
-    _, test_loader = get_dataloaders()
+
+    # Load trained model
+    current_dir = os.getcwd()
+    project_root = os.path.dirname(current_dir)
+    path_to_saved_model = os.path.join(project_root, "src", "model_state.pt")
+
+    model = load_trained_model(path_to_saved_model, device_type)
+    model.to(device)
     model.eval()
 
+    # Load test data
+    _, test_loader = get_dataloaders()
     images, labels = next(iter(test_loader))
     image = images[0].unsqueeze(0).to(device)
     label = labels[0].unsqueeze(0).to(device)

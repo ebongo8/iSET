@@ -2,7 +2,8 @@ import torch
 import copy
 import pandas as pd
 from test_files.utils import get_model, get_dataloaders, get_device_type, load_trained_model
-from src.classifier_model import ImageClassifier
+import os
+import csv
 
 
 def test_training_loop_integrity():
@@ -20,16 +21,35 @@ def test_training_loop_integrity():
 
     data, target = next(iter(train_loader))
     data, target = data.to(device), target.to(device)
-
+    # Capture weights before training step
     before_weights = next(model.parameters()).detach().clone()
+
     optimizer.zero_grad()
     output = model(data)
     loss = criterion(output, target)
     loss.backward()
     optimizer.step()
+
+    # Capture weights after training step
     after_weights = next(model.parameters()).detach().clone()
 
-    assert not torch.equal(before_weights, after_weights), "Weights should update after training step"
+    # Check if weights updated
+    test_passed = not torch.equal(before_weights, after_weights)
+    assert test_passed, "Weights should update after training step"
+
+    # Save flattened weights to CSV with match column
+    results_file = "training_loop_weights.csv"
+    with open(results_file, mode='w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(["Before Weights", "After Weights", "Match"])
+
+        # Flatten tensors
+        before_flat = before_weights.flatten().cpu().numpy()
+        after_flat = after_weights.flatten().cpu().numpy()
+
+        # Write one row per weight
+        for b, a in zip(before_flat, after_flat):
+            writer.writerow([float(b), float(a), float(b) == float(a)])
 
 
 def test_save_load_integrity(tmp_path):
