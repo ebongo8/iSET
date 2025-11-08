@@ -1,8 +1,6 @@
 import torch
-import copy
 import pandas as pd
 from test_files.utils import get_model, get_dataloaders, get_device_type, load_trained_model
-import os
 import csv
 
 
@@ -38,7 +36,7 @@ def test_training_loop_integrity():
     assert test_passed, "Weights should update after training step"
 
     # Save flattened weights to CSV with match column
-    results_file = "training_loop_weights.csv"
+    results_file = "TC-IT-01_training_loop_weights.csv"
     with open(results_file, mode='w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(["Before Weights", "After Weights", "Match"])
@@ -77,7 +75,7 @@ def test_save_load_integrity(tmp_path):
         assert torch.equal(p1, p2), "Weights must match after save/load integrity test"
 
     # Step 5: Export some sample weights to CSV for visual confirmation
-    csv_path = "model_weights_comparison.csv"
+    csv_path = " TC-IT-02_model_weights_comparison.csv"
     rows = []
     for (name, orig_param), (_, loaded_param) in zip(original_model.state_dict().items(),
                                                     new_model.state_dict().items()):
