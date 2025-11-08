@@ -75,7 +75,7 @@ def test_save_load_integrity(tmp_path):
         assert torch.equal(p1, p2), "Weights must match after save/load integrity test"
 
     # Step 5: Export some sample weights to CSV for visual confirmation
-    csv_path = " TC-IT-02_model_weights_comparison.csv"
+    csv_path = "TC-IT-02_model_weights_comparison.csv"
     rows = []
     for (name, orig_param), (_, loaded_param) in zip(original_model.state_dict().items(),
                                                     new_model.state_dict().items()):
