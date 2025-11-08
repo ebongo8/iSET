@@ -16,16 +16,20 @@ def test_performance():
     TC-ST-01  Performance Test: Train the model for 10 epochs. Evaluate on the entire unseen MNIST test set.
     Expected result: Accuracy is >= 95%. A confusion matrix is generated showing class-wise performance.
     """
-    # TODO Heather review/update code below
     device_type = get_device_type(windows_os=False)
     device = torch.device(device_type)
-    # TODO figure out if we need to get the trained model or not (maybe use load_trained_model function in utils)
-    model = get_model()
+    # Load trained model (already saved in src/model_state.pt)
+    # Load the trained model
+    current_dir = os.getcwd()
+    project_root = os.path.dirname(current_dir)
+    path_to_saved_model = os.path.join(project_root, "src", "model_state.pt")
+    model = load_trained_model(path_to_saved_model, device_type)
+    model.to(device)
+    model.eval()
     _, test_loader = get_dataloaders()
 
     correct = 0
     total = 0
-    model.eval()
     with torch.no_grad():
         for images, labels in test_loader:
             images, labels = images.to(device), labels.to(device)
@@ -35,6 +39,8 @@ def test_performance():
             correct += (predicted == labels).sum().item()
 
     accuracy = correct / total
+    print(f"Accuracy: {accuracy:.2%}")
+
     assert accuracy >= 0.95, f"Expected >=95% accuracy, got {accuracy:.2%}"
 
 
