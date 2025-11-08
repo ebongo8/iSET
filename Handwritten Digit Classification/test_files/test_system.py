@@ -1,14 +1,16 @@
 import torch
-import numpy as np
 from captum.attr import Saliency, LayerGradCam
 from test_files.utils import get_model, get_dataloaders, get_device_type, load_trained_model
 import pytest
 import torch.nn.functional as F
 from torchvision import transforms
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 # from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import matplotlib.pyplot as plt
 import os
+
+# TODO add file name config file, and a global var for the number to use for 02 and 03 to make sure they use the same one
+# TODO add label input to chose what number to show for TC-ST-04
 
 
 def test_performance():
@@ -40,6 +42,8 @@ def test_performance():
 
     accuracy = correct / total
     print(f"Accuracy: {accuracy:.2%}")
+
+    # TODO need to print confusion matrix for this test
 
     assert accuracy >= 0.95, f"Expected >=95% accuracy, got {accuracy:.2%}"
 
@@ -108,7 +112,7 @@ def test_explanation_generation():
     plt.axis("off")
     plt.subplots_adjust(top=0.9, bottom=0.1)
     plt.title("Grad-CAM Heatmap")
-    plt.savefig("gradcam_heatmap.png", bbox_inches='tight')
+    plt.savefig("TC-ST-02_gradcam_heatmap.png", bbox_inches='tight')
 
     assert attr.shape == (1, 1, 28, 28), "Expected attribution shape (1, 1, 28, 28)."
 
@@ -152,20 +156,13 @@ def test_explanation_accuracy():
     image = images[idx].unsqueeze(0)
     target_class = preds[idx].item()
 
-    plt.imshow(image.squeeze().cpu(), cmap="gray")
-    plt.title(f"Original Image (Label={desired_label}, Pred={target_class})")
-    plt.axis("off")
-    plt.tight_layout()
-    plt.savefig(f"original_image_label{desired_label}.png", bbox_inches="tight")
-    plt.show()
-
     # Get original confidence
     with torch.no_grad():
         orig_output = model(image)
         orig_conf = torch.nn.functional.softmax(orig_output, dim=1)[0, target_class].item()
 
     # Load Grad-CAM heatmap from TC-ST-02
-    heatmap = plt.imread("gradcam_heatmap.png")
+    heatmap = plt.imread("TC-ST-02_gradcam_heatmap.png")
     if heatmap.ndim == 3:  # handle RGB PNGs
         heatmap = heatmap[..., 0]
     heatmap = torch.tensor(heatmap, dtype=torch.float32)
@@ -212,7 +209,7 @@ def test_explanation_accuracy():
     axs[0].imshow(image.squeeze().cpu(), cmap="gray")
     axs[0].axis("off")
     axs[0].text(
-        0.5,-0.05, f"Conf={orig_conf:.3f}", ha='center', va='top', transform=axs[0].transAxes, fontsize=12
+        0.5, -0.05, f"Conf={orig_conf:.3f}", ha='center', va='top', transform=axs[0].transAxes, fontsize=12
     )
     axs[0].set_title(f"Original (Label={desired_label})")
 
@@ -234,8 +231,7 @@ def test_explanation_accuracy():
 
     plt.tight_layout()
     plt.subplots_adjust(top=0.9, bottom=0.1)
-    plt.savefig("masked_image_comparison.png", bbox_inches='tight')
-    plt.show()
+    plt.savefig("TC-ST-03_masked_image_comparison.png", bbox_inches='tight')
 
     print(f"Original confidence: {orig_conf:.5f}")
     print(f"Confidence after salient mask: {conf_salient_masked:.5f}")
@@ -294,7 +290,6 @@ def test_counterfactual_robustness():
 
     # --- Create side-by-side figure with a border ---
     fig, axes = plt.subplots(1, 2, figsize=(6, 3))
-
     axes[0].imshow(orig_img, cmap="gray")
     axes[0].set_title("Original Image")
     axes[0].axis("off")
@@ -306,9 +301,7 @@ def test_counterfactual_robustness():
     # Add a little breathing room between subplots
     plt.subplots_adjust(wspace=0.3, hspace=0.1)
     plt.tight_layout(pad=2.0)
-
-    # --- Save figure with padding/border ---
-    save_path = os.path.join(current_dir, "original_vs_perturbed.png")
+    save_path = os.path.join(current_dir, "TC-ST-04_original_vs_perturbed.png")
     plt.savefig(save_path, bbox_inches="tight", pad_inches=0.2, dpi=200)
     plt.close()
 
@@ -329,20 +322,28 @@ def test_knowledge_limits():
     model.eval()
 
     # Create a blank 28x28 grayscale (mode 'L') image with black background (color=0)
+    # TODO work on making this A bigger maybe?
     img = Image.new("L", (28, 28), color=0)
-    # Draw a white letter "A" near the top-left of the image
+    # Draw a white letter "A"
     draw = ImageDraw.Draw(img)
-    draw.text((4, 0), "A", fill=255)
-    # Visual confirmation of the test image
+    draw.text((4, 4), "A", fill=255)
+
+    # Save test image
+    current_dir = os.getcwd()
+    test_img_path = os.path.join(current_dir, "TC-ST-05_ood_input_A.png")
+    plt.figure()
     plt.imshow(img, cmap="gray")
-    plt.title("OOD Test Input ('A')")
+    plt.title("Out-of-Distribution Test Input ('A')")
     plt.axis("off")
-    plt.show()
+    # img.save(test_img_path)
+    plt.savefig(test_img_path, bbox_inches="tight", pad_inches=0.2, dpi=200)
+    plt.close()
 
     # Convert PIL image to PyTorch tensor and add batch dimension (1, 1, 28, 28)
     transform = transforms.ToTensor()
     img_tensor = transform(img).unsqueeze(0).to(device)
 
+    # Model inference
     with torch.no_grad():
         # Get raw model outputs (logits)
         output = model(img_tensor)
@@ -350,7 +351,47 @@ def test_knowledge_limits():
         probs = F.softmax(output, dim=1).cpu().numpy()[0]
 
     # Print highest predicted probability
-    print(f"Max softmax prob: {probs.max():.3f}")
+    max_prob = probs.max()
+    pred_class = probs.argmax()
+    print(f"Highest class: {pred_class} | Max softmax prob: {max_prob:.3f}")
+
+    # --- Visualization: softmax probability distribution ---
+    # This plot shows how confident the model is for each possible class (0–9).
+    # Ideally, for an out-of-distribution input like 'A', the model should not
+    # assign high confidence to any one class — all probabilities should be low
+    # and relatively uniform.
+    plt.figure(figsize=(8, 4))
+    bars = plt.bar(range(len(probs)), probs, color="gray", alpha=0.7)
+
+    # Highlight predicted (max) class
+    bars[pred_class].set_color("red")
+
+    # Add probability text labels to all bars
+    for i, p in enumerate(probs):
+        plt.text(i, p + 0.01, f"{p:.2f}", ha="center",
+                 color="red" if i == pred_class else "dimgray",
+                 fontweight="bold" if i == pred_class else "normal", fontsize=9)
+
+    plt.title("Model Confidence Across Classes\n(Softmax Probability Distribution)", fontsize=13)
+    plt.xlabel("Class Index", fontsize=11)
+    plt.ylabel("Probability", fontsize=11)
+    plt.xticks(range(len(probs)), [str(i) for i in range(len(probs))])
+    plt.ylim(0, 1)
+    plt.grid(axis="y", linestyle="--", alpha=0.4)
+    plt.tight_layout()
+    # Save figure
+    probs_fig_path = os.path.join(current_dir, "TC-ST-05_ood_softmax_distribution.png")
+    plt.savefig(probs_fig_path, bbox_inches="tight", pad_inches=0.3, dpi=200)
+    plt.close()
+
     # Assert that the model is not overly confident on this out-of-distribution input.
     # If any class has > 0.5 probability, the model may be overconfident and fail this test.
     assert probs.max() < 0.5, f"Model too confident on OOD input (max={probs.max():.2f})."
+
+    # Explanation of results:
+    # The bars represent how confident the model is in each possible digit class (0–9).
+    # When the model does not recognize the input (like an “A,” which isn’t a digit),
+    # the probabilities should be roughly uniform — around 0.1 each for a 10-class classifier.
+    # That indicates the model knows its limits — it’s not overconfident about an unfamiliar input.
+    # If one bar spikes high (e.g., >0.5), that suggests the model is overconfident and possibly
+    # not robust to out-of-distribution data.
