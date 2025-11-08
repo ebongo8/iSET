@@ -266,10 +266,10 @@ def test_counterfactual_robustness():
 
     model = load_trained_model(path_to_saved_model, device_type)
     model.to(device)
+    _, test_loader = get_dataloaders()
     model.eval()
 
     # Load test data
-    _, test_loader = get_dataloaders()
     images, labels = next(iter(test_loader))
     image = images[0].unsqueeze(0).to(device)
     label = labels[0].unsqueeze(0).to(device)
@@ -286,6 +286,31 @@ def test_counterfactual_robustness():
 
     adv_output = model(adv_image)
     adv_pred = adv_output.argmax(dim=1)
+
+    # --- Visualization ---
+    # Convert tensors to numpy
+    orig_img = image.detach().cpu().squeeze().numpy()
+    pert_img = adv_image.detach().cpu().squeeze().numpy()
+
+    # --- Create side-by-side figure with a border ---
+    fig, axes = plt.subplots(1, 2, figsize=(6, 3))
+
+    axes[0].imshow(orig_img, cmap="gray")
+    axes[0].set_title("Original Image")
+    axes[0].axis("off")
+
+    axes[1].imshow(pert_img, cmap="gray")
+    axes[1].set_title("Perturbed Image")
+    axes[1].axis("off")
+
+    # Add a little breathing room between subplots
+    plt.subplots_adjust(wspace=0.3, hspace=0.1)
+    plt.tight_layout(pad=2.0)
+
+    # --- Save figure with padding/border ---
+    save_path = os.path.join(current_dir, "original_vs_perturbed.png")
+    plt.savefig(save_path, bbox_inches="tight", pad_inches=0.2, dpi=200)
+    plt.close()
 
     print(f"Original: {pred_class.item()}, Adversarial: {adv_pred.item()}")
 
