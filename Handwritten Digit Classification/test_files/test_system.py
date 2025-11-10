@@ -1,6 +1,6 @@
 import torch
 from captum.attr import Saliency, LayerGradCam
-from test_files.utils import get_model, get_dataloaders, get_device_type, load_trained_model
+from test_files.utils import get_model, get_dataloaders, get_device_type, load_trained_model, get_mnist_image
 import pytest
 import torch.nn.functional as F
 from torchvision import transforms
@@ -8,7 +8,6 @@ from PIL import Image, ImageDraw, ImageFont
 # from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import matplotlib.pyplot as plt
 import os
-
 # TODO add file name config file, and a global var for the number to use for 02 and 03 to make sure they use the same one
 # TODO add label input to chose what number to show for TC-ST-04
 
@@ -316,26 +315,38 @@ def test_knowledge_limits():
     Expected result: The model's softmax output shows low confidence,
     with no single class having a probability > 0.5.
     """
+    # Setup device and load trained model
     device_type = get_device_type(windows_os=False)
     device = torch.device(device_type)
-    model = get_model()
+
+    # Load trained model
+    current_dir = os.getcwd()
+    project_root = os.path.dirname(current_dir)
+    path_to_saved_model = os.path.join(project_root, "src", "model_state.pt")
+
+    model = load_trained_model(path_to_saved_model, device_type)
+    model.to(device)
     model.eval()
 
-    # Create a blank 28x28 grayscale (mode 'L') image with black background (color=0)
-    # TODO work on making this A bigger maybe?
-    img = Image.new("L", (28, 28), color=0)
-    # Draw a white letter "A"
-    draw = ImageDraw.Draw(img)
-    draw.text((4, 4), "A", fill=255)
+    # ------ Load test image from PNG ------
+    current_dir = os.getcwd()
+    # Move up one directory, go into "test_images" folder, then pick the file
+    parent_dir = os.path.abspath(os.path.join(current_dir, ".."))
+    input_img_path = os.path.join(parent_dir, "test_images", "emnist_letter_A.png")
+    # Uncomment below to show that the model is very confident in predicting 0
+    # input_img_path = os.path.join(current_dir, "..", "test_images", "mnist_0.png")
+    img = Image.open(input_img_path).convert("L")  # ensure grayscale
+
+    # Resize to 28x28 if necessary
+    if img.size != (28, 28):
+        img = img.resize((28, 28))
 
     # Save test image
-    current_dir = os.getcwd()
     test_img_path = os.path.join(current_dir, "TC-ST-05_ood_input_A.png")
     plt.figure()
     plt.imshow(img, cmap="gray")
     plt.title("Out-of-Distribution Test Input ('A')")
     plt.axis("off")
-    # img.save(test_img_path)
     plt.savefig(test_img_path, bbox_inches="tight", pad_inches=0.2, dpi=200)
     plt.close()
 
@@ -383,6 +394,10 @@ def test_knowledge_limits():
     probs_fig_path = os.path.join(current_dir, "TC-ST-05_ood_softmax_distribution.png")
     plt.savefig(probs_fig_path, bbox_inches="tight", pad_inches=0.3, dpi=200)
     plt.close()
+
+    print("Image tensor min/max:", img_tensor.min().item(), img_tensor.max().item())
+    print("Predicted class:", pred_class)
+    print("Max softmax probability:", max_prob)
 
     # Assert that the model is not overly confident on this out-of-distribution input.
     # If any class has > 0.5 probability, the model may be overconfident and fail this test.
