@@ -1,13 +1,14 @@
 import torch
 from captum.attr import Saliency, LayerGradCam
-from test_files.utils import get_model, get_dataloaders, get_device_type, load_trained_model, get_mnist_image
+from test_files.utils import get_dataloaders, get_device_type, load_trained_model, get_mnist_image
 import pytest
 import torch.nn.functional as F
 from torchvision import transforms
 from PIL import Image, ImageDraw, ImageFont
-# from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import matplotlib.pyplot as plt
 import os
+
 # TODO add file name config file, and a global var for the number to use for 02 and 03 to make sure they use the same one
 # TODO add label input to chose what number to show for TC-ST-04
 
@@ -20,7 +21,6 @@ def test_performance():
     device_type = get_device_type(windows_os=False)
     device = torch.device(device_type)
     # Load trained model (already saved in src/model_state.pt)
-    # Load the trained model
     current_dir = os.getcwd()
     project_root = os.path.dirname(current_dir)
     path_to_saved_model = os.path.join(project_root, "src", "model_state.pt")
@@ -31,6 +31,8 @@ def test_performance():
 
     correct = 0
     total = 0
+    all_preds = []
+    all_labels = []
     with torch.no_grad():
         for images, labels in test_loader:
             images, labels = images.to(device), labels.to(device)
@@ -39,10 +41,27 @@ def test_performance():
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
+            all_preds.extend(predicted.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+
     accuracy = correct / total
     print(f"Accuracy: {accuracy:.2%}")
 
-    # TODO need to print confusion matrix for this test
+    # Confusion matrix block goes here
+    print(f"Collected {len(all_preds)} predictions and {len(all_labels)} labels")
+    print(f"Sample preds: {all_preds[:5]}")
+    print(f"Sample labels: {all_labels[:5]}")
+
+    cm = confusion_matrix(all_labels, all_preds)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=list(range(10)))
+
+    plt.figure(figsize=(8, 6))
+    disp.plot(cmap=plt.cm.Blues)
+    plt.title("Confusion Matrix: MNIST Class-wise Performance")
+    # Save figure to file in current directory
+    current_dir = os.getcwd()
+    cm_fig_path = os.path.join(current_dir, "TC-ST-01_mnist_confusion_matrix.png")
+    plt.savefig(cm_fig_path, bbox_inches="tight", dpi=200)
 
     assert accuracy >= 0.95, f"Expected >=95% accuracy, got {accuracy:.2%}"
 
