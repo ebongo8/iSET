@@ -62,14 +62,8 @@ def test_meaningful_explanation():
         transforms.ToTensor(),
         transforms.Normalize((0.1307,), (0.3081,))
     ])
-
     img_tensor = transform(img).unsqueeze(0).to(device)
     img_tensor.requires_grad = True
-
-    # Display the input image
-    plt.imshow(np.array(img), cmap="gray")
-    plt.axis("off")
-    plt.show()
 
     # Predict
     output = model(img_tensor)
@@ -86,19 +80,36 @@ def test_meaningful_explanation():
     img_for_display = img_tensor.squeeze().cpu().detach().numpy()
     img_for_display = img_for_display * 0.3081 + 0.1307  # reverse normalization
 
-    # Show overlayed saliency map
-    plt.figure(figsize=(5, 5))
-    plt.imshow(img_for_display, cmap="gray")
-    plt.imshow(heatmap, cmap="hot", alpha=0.5)
-    plt.title(f"Saliency Map Overlay (Predicted: {pred_class})")
-    plt.axis("off")
-    plt.show()
-
     # Save heatmap image
     plt.imshow(heatmap, cmap="hot")
     plt.axis("off")
     plt.title(f"Saliency Map for Predicted '{pred_class}'")
-    plt.savefig("uat_explanation_3.png")
+    plt.savefig("TC-UAT-01_heatmap_explanation_3.png")
+    plt.close()
+
+    # --- Side-by-side figure: input, overlay, heatmap ---
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))  # wide figure for titles
+
+    # Processed input
+    axes[0].imshow(img_for_display, cmap="gray")
+    axes[0].set_title("Processed Input", fontsize=12)
+    axes[0].axis("off")
+
+    # Overlay of input + saliency
+    axes[1].imshow(img_for_display, cmap="gray")
+    axes[1].imshow(heatmap, cmap="hot", alpha=0.5)
+    axes[1].set_title(f"Saliency Map Overlay (Predicted: {pred_class})", fontsize=12)
+    axes[1].axis("off")
+
+    # Heatmap only
+    axes[2].imshow(heatmap, cmap="hot")
+    axes[2].set_title("Saliency Heatmap", fontsize=12)
+    axes[2].axis("off")
+
+    # Adjust layout to prevent title cutoff
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.savefig("TC-UAT-01_input_overlay_heatmap_3.png")
+    plt.close()
 
     # Validate correct classification and explanation output
     assert pred_class == 3, f"Expected model to classify as '3', got '{pred_class}'"
