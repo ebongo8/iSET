@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from captum.attr import Saliency
+from captum.attr import Saliency, LayerGradCam
 from torchvision import transforms
 from PIL import Image, ImageOps
 import matplotlib.pyplot as plt
@@ -157,45 +157,87 @@ def test_trust_building_failure_analysis():
     pred_class = output.argmax(dim=1).item()
     print(f"Predicted class: {pred_class} (expected misclassification of '9' → '8')")
 
-    # Generate saliency map
+    # --- Saliency Map ---
     saliency = Saliency(model)
-    attr = saliency.attribute(img_tensor, target=pred_class)
-    heatmap = attr.squeeze().abs().cpu().detach().numpy()
-    heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min())
+    attr_saliency = saliency.attribute(img_tensor, target=pred_class)
+    heatmap_saliency = attr_saliency.squeeze().abs().cpu().detach().numpy()
+    heatmap_saliency = (heatmap_saliency - heatmap_saliency.min()) / (heatmap_saliency.max() - heatmap_saliency.min())
 
-    # Visualization
+    # ---- GRAD-CAM ----
+    # Find last conv layer dynamically
+    last_conv_layer = None
+    for layer in model.modules():
+        if isinstance(layer, torch.nn.Conv2d):
+            last_conv_layer = layer
+    assert last_conv_layer is not None, "No Conv2d layer found for Grad-CAM."
+
+    gradcam = LayerGradCam(model, last_conv_layer)
+    attr_gc = gradcam.attribute(img_tensor, target=pred_class)
+
+    # Grad-CAM upsample to match input size
+    if attr_gc.dim() == 4:
+        attr_gc = torch.nn.functional.interpolate(attr_gc, size=(28, 28), mode="bilinear", align_corners=False)
+    else:
+        raise ValueError(f"Expected 4D Grad-CAM output, got shape {attr_gc.shape}")
+
+    heatmap_gradcam = attr_gc.squeeze().cpu().detach().numpy()
+    heatmap_gradcam = (heatmap_gradcam - heatmap_gradcam.min()) / (heatmap_gradcam.max() - heatmap_gradcam.min())
+
+    # ---- VISUALIZATION ----
     img_for_display = img_tensor.squeeze().cpu().detach().numpy()
     img_for_display = img_for_display * 0.3081 + 0.1307  # reverse normalization
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    # --- Visualization (3 rows: original | saliency | grad-cam) ---
+    fig = plt.figure(figsize=(12, 14))
+    gs = fig.add_gridspec(3, 2, height_ratios=[1, 1, 1])  # 3 rows, 2 columns
 
-    axes[0].imshow(img_for_display, cmap="gray")
-    axes[0].set_title("Processed Input ('9')", fontsize=12)
-    axes[0].axis("off")
+    # Define axes
+    ax_orig = fig.add_subplot(gs[0, :])  # top row spans both columns
+    ax_sal_overlay = fig.add_subplot(gs[1, 0])  # row 2 col 1
+    ax_sal_map = fig.add_subplot(gs[1, 1])  # row 2 col 2
+    ax_grad_overlay = fig.add_subplot(gs[2, 0])  # row 3 col 1
+    ax_grad_map = fig.add_subplot(gs[2, 1])  # row 3 col 2
 
-    axes[1].imshow(img_for_display, cmap="gray")
-    axes[1].imshow(heatmap, cmap="hot", alpha=0.5)
-    axes[1].set_title(f"Overlay (Predicted: {pred_class})", fontsize=12)
-    axes[1].axis("off")
+    # Original processed input (top row)
+    ax_orig.imshow(img_for_display, cmap="gray")
+    ax_orig.set_title("Processed Input ('9')", fontsize=14, pad=10)
+    ax_orig.axis("off")
 
-    axes[2].imshow(heatmap, cmap="hot")
-    axes[2].set_title("Saliency Heatmap", fontsize=12)
-    axes[2].axis("off")
+    # Saliency overlay (row 2 col 1)
+    ax_sal_overlay.imshow(img_for_display, cmap="gray")
+    ax_sal_overlay.imshow(heatmap_saliency, cmap="hot", alpha=0.5)
+    ax_sal_overlay.set_title(f"Saliency Overlay\n(Predicted: {pred_class})", fontsize=12)
+    ax_sal_overlay.axis("off")
 
-    plt.tight_layout()
-    plt.savefig("TC-UAT-02_failure_analysis_9_to_8.png")
+    # Raw saliency heatmap (row 2 col 2)
+    ax_sal_map.imshow(heatmap_saliency, cmap="hot")
+    ax_sal_map.set_title("Saliency Heatmap", fontsize=12)
+    ax_sal_map.axis("off")
+
+    # Grad-CAM overlay (row 3 col 1)
+    ax_grad_overlay.imshow(img_for_display, cmap="gray")
+    ax_grad_overlay.imshow(heatmap_gradcam, cmap="hot", alpha=0.5)
+    ax_grad_overlay.set_title(f"Grad-CAM Overlay\n(Predicted: {pred_class})", fontsize=12)
+    ax_grad_overlay.axis("off")
+
+    # Raw Grad-CAM heatmap (row 3 col 2)
+    ax_grad_map.imshow(heatmap_gradcam, cmap="hot")
+    ax_grad_map.set_title("Grad-CAM Heatmap", fontsize=12)
+    ax_grad_map.axis("off")
+
+    # Adjust spacing and layout
+    plt.subplots_adjust(wspace=0.15, hspace=0.25, left=0.05, right=0.95, top=0.93, bottom=0.05)
+
+    # Save figure
+    plt.savefig("TC-UAT-02_failure_analysis_9_to_8.png", bbox_inches="tight", dpi=200)
     plt.close()
 
     # Assertions
-    # Expectation: model misclassifies '9' as '8'
     assert pred_class == 8, f"Expected misclassification as '8', got '{pred_class}'"
+    assert heatmap_saliency.shape == (28, 28), "Saliency heatmap not generated correctly."
 
-    # Heatmap check
-    assert heatmap.shape == (28, 28), "Saliency heatmap not generated correctly."
-
-    # Sanity check: ensure there’s strong saliency around the loop areas (upper + lower)
-    upper_intensity = np.mean(heatmap[:14, :])
-    lower_intensity = np.mean(heatmap[14:, :])
-    avg_intensity = np.mean(heatmap)
+    upper_intensity = np.mean(heatmap_saliency[:14, :])
+    lower_intensity = np.mean(heatmap_saliency[14:, :])
+    avg_intensity = np.mean(heatmap_saliency)
     assert (upper_intensity > avg_intensity * 1.1) and (lower_intensity > avg_intensity * 1.1), \
         "Saliency does not highlight both loop regions—explanation not interpretable."
