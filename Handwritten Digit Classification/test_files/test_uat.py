@@ -4,10 +4,116 @@ from captum.attr import Saliency, LayerGradCam
 from torchvision import transforms
 from PIL import Image, ImageOps
 import matplotlib.pyplot as plt
-from test_files.utils import get_model, get_device_type, load_trained_model
+from test_files.utils import get_device_type, load_trained_model
 import os
 import numpy as np
 
+
+# ============================================================
+# Helper Functions
+# ============================================================
+def load_and_preprocess_image(img_path, device, transparent_background=False, invert=False):
+    """Load image and convert to MNIST tensor"""
+    if transparent_background:
+        img = Image.open(img_path).convert("RGBA")
+        bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
+        img = Image.alpha_composite(bg, img).convert("L")
+    else:
+        img = Image.open(img_path).convert("L")
+
+    if invert:
+        img = ImageOps.invert(img)
+        img = ImageOps.autocontrast(img)
+
+    transform = transforms.Compose([
+        transforms.Resize((28, 28)),
+        transforms.ToTensor(),
+        transforms.Normalize((0.1307,), (0.3081,))
+    ])
+    img_tensor = transform(img).unsqueeze(0).to(device)
+    img_tensor.requires_grad = True
+    return img_tensor, img
+
+
+def generate_heatmap(attr):
+    """Normalize attribution map to [0,1]"""
+    heatmap = attr.squeeze().abs().cpu().detach().numpy()
+    heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min())
+    return heatmap
+
+
+def find_last_conv_layer(model):
+    """Find last convolutional layer in model for Grad-CAM"""
+    last_conv = None
+    for layer in model.modules():
+        if isinstance(layer, torch.nn.Conv2d):
+            last_conv = layer
+    if last_conv is None:
+        raise ValueError("No Conv2d layer found in model for Grad-CAM.")
+    return last_conv
+
+
+def create_saliency_and_gradcam_heatmaps(model, img_tensor, target_class):
+    """Compute Saliency and Grad-CAM heatmaps"""
+    saliency = Saliency(model)
+    attr_saliency = saliency.attribute(img_tensor, target=target_class)
+    heatmap_saliency = generate_heatmap(attr_saliency)
+
+    last_conv = find_last_conv_layer(model)
+    gradcam = LayerGradCam(model, last_conv)
+    attr_gc = gradcam.attribute(img_tensor, target=target_class)
+    attr_gc = F.interpolate(attr_gc, size=(28,28), mode="bilinear", align_corners=False)
+    heatmap_gradcam = generate_heatmap(attr_gc)
+
+    return heatmap_saliency, heatmap_gradcam
+
+
+def create_output_visualization(img_tensor, heatmap_saliency, heatmap_gradcam, pred_class, output_path, title_suffix=""):
+    """3-row visualization: original, saliency, grad-cam"""
+    img_for_display = img_tensor.squeeze().cpu().detach().numpy()
+    img_for_display = img_for_display * 0.3081 + 0.1307
+
+    fig = plt.figure(figsize=(12, 14))
+    gs = fig.add_gridspec(3, 2, height_ratios=[1, 1, 1])  # 3 rows, 2 columns
+
+    # Top row: original input spans both columns
+    ax_orig = fig.add_subplot(gs[0, :])
+    ax_orig.imshow(img_for_display, cmap="gray")
+    ax_orig.set_title(f"Processed Input {title_suffix}", fontsize=14, pad=10)
+    ax_orig.axis("off")
+
+    # Row 2: saliency overlay + raw
+    ax_sal_overlay = fig.add_subplot(gs[1, 0])
+    ax_sal_overlay.imshow(img_for_display, cmap="gray")
+    ax_sal_overlay.imshow(heatmap_saliency, cmap="hot", alpha=0.5)
+    ax_sal_overlay.set_title(f"Saliency Overlay (Predicted: {pred_class})", fontsize=12)
+    ax_sal_overlay.axis("off")
+
+    ax_sal_map = fig.add_subplot(gs[1, 1])
+    ax_sal_map.imshow(heatmap_saliency, cmap="hot")
+    ax_sal_map.set_title("Saliency Heatmap", fontsize=12)
+    ax_sal_map.axis("off")
+
+    # Row 3: grad-cam overlay + raw
+    ax_grad_overlay = fig.add_subplot(gs[2, 0])
+    ax_grad_overlay.imshow(img_for_display, cmap="gray")
+    ax_grad_overlay.imshow(heatmap_gradcam, cmap="hot", alpha=0.5)
+    ax_grad_overlay.set_title(f"Grad-CAM Overlay (Predicted: {pred_class})", fontsize=12)
+    ax_grad_overlay.axis("off")
+
+    ax_grad_map = fig.add_subplot(gs[2, 1])
+    ax_grad_map.imshow(heatmap_gradcam, cmap="hot")
+    ax_grad_map.set_title("Grad-CAM Heatmap", fontsize=12)
+    ax_grad_map.axis("off")
+
+    plt.subplots_adjust(wspace=0.15, hspace=0.25, left=0.05, right=0.95, top=0.93, bottom=0.05)
+    plt.savefig(output_path, bbox_inches="tight", dpi=200)
+    plt.close()
+
+
+# ============================================================
+# Tests
+# ============================================================
 
 def test_meaningful_explanation():
     """
@@ -33,87 +139,31 @@ def test_meaningful_explanation():
     model.eval()
 
     # Load user-provided handwritten '3'
-    current_dir = os.getcwd()
-    project_root = os.path.dirname(current_dir)
-    img_path = os.path.join(project_root, "test_images", "3.png")
-
-    transparent_background = True
-    inverted = True
-
-    if transparent_background:
-        img = Image.open(img_path).convert("RGBA")
-        # Convert transparency to white background
-        background = Image.new("RGBA", img.size, (255, 255, 255, 255))
-        img = Image.alpha_composite(background, img)
-        # Convert to grayscale
-        img = img.convert("L")
-    else:
-        img = Image.open(img_path).convert("L")
-
-    if inverted:
-        # Invert colors (so digit becomes white, background black)
-        img = ImageOps.invert(img)
-        # Enhance contrast
-        img = ImageOps.autocontrast(img)
-
-    # Transform to match MNIST input
-    transform = transforms.Compose([
-        transforms.Resize((28, 28)),
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,))
-    ])
-    img_tensor = transform(img).unsqueeze(0).to(device)
-    img_tensor.requires_grad = True
+    img_tensor, img = load_and_preprocess_image(
+        os.path.join(project_root, "test_images", "3.png"),
+        device,
+        transparent_background=True,
+        invert=True
+    )
 
     # Predict
     output = model(img_tensor)
     pred_class = output.argmax(dim=1).item()
     print(f"Predicted digit: {pred_class}")
 
-    # Generate saliency map
-    saliency = Saliency(model)
-    attr = saliency.attribute(img_tensor, target=pred_class)
-    heatmap = attr.squeeze().abs().cpu().detach().numpy()
-    heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min())  # normalize [0,1]
+    # Compute heatmaps
+    heatmap_saliency, heatmap_gradcam = create_saliency_and_gradcam_heatmaps(model, img_tensor, pred_class)
 
-    # Prepare original image for overlay display
-    img_for_display = img_tensor.squeeze().cpu().detach().numpy()
-    img_for_display = img_for_display * 0.3081 + 0.1307  # reverse normalization
-
-    # Save heatmap image
-    plt.imshow(heatmap, cmap="hot")
-    plt.axis("off")
-    plt.title(f"Saliency Map for Predicted '{pred_class}'")
-    plt.savefig("TC-UAT-01_heatmap_explanation_3.png")
-    plt.close()
-
-    # --- Side-by-side figure: input, overlay, heatmap ---
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))  # wide figure for titles
-
-    # Processed input
-    axes[0].imshow(img_for_display, cmap="gray")
-    axes[0].set_title("Processed Input", fontsize=12)
-    axes[0].axis("off")
-
-    # Overlay of input + saliency
-    axes[1].imshow(img_for_display, cmap="gray")
-    axes[1].imshow(heatmap, cmap="hot", alpha=0.5)
-    axes[1].set_title(f"Saliency Map Overlay (Predicted: {pred_class})", fontsize=12)
-    axes[1].axis("off")
-
-    # Heatmap only
-    axes[2].imshow(heatmap, cmap="hot")
-    axes[2].set_title("Saliency Heatmap", fontsize=12)
-    axes[2].axis("off")
-
-    # Adjust layout to prevent title cutoff
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
-    plt.savefig("TC-UAT-01_input_overlay_heatmap_3.png")
-    plt.close()
+    # Visualize
+    create_output_visualization(
+        img_tensor, heatmap_saliency, heatmap_gradcam, pred_class,
+        "TC-UAT-01_input_overlay_heatmap_3.png", title_suffix="'3'"
+    )
 
     # Validate correct classification and explanation output
     assert pred_class == 3, f"Expected model to classify as '3', got '{pred_class}'"
-    assert heatmap.shape == (28, 28), "Saliency heatmap not generated correctly."
+    assert heatmap_saliency.shape == (28, 28), "Saliency heatmap not generated correctly."
+    assert heatmap_gradcam.shape == (28, 28), "GradCam heatmap not generated correctly."
 
 
 def test_trust_building_failure_analysis():
@@ -139,102 +189,29 @@ def test_trust_building_failure_analysis():
     model.to(device)
     model.eval()
 
-    # Load the poorly written "9" image
-    img_path = os.path.join(project_root, "test_images", "poorly_written_9.png")
-    img = Image.open(img_path).convert("L")
-    img = ImageOps.autocontrast(img)  # enhance contrast
-
-    transform = transforms.Compose([
-        transforms.Resize((28, 28)),
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,))
-    ])
-    img_tensor = transform(img).unsqueeze(0).to(device)
-    img_tensor.requires_grad = True
+    img_tensor, img = load_and_preprocess_image(
+        os.path.join(project_root, "test_images", "poorly_written_9.png"),
+        device
+    )
 
     # Predict
     output = model(img_tensor)
     pred_class = output.argmax(dim=1).item()
     print(f"Predicted class: {pred_class} (expected misclassification of '9' → '8')")
 
-    # --- Saliency Map ---
-    saliency = Saliency(model)
-    attr_saliency = saliency.attribute(img_tensor, target=pred_class)
-    heatmap_saliency = attr_saliency.squeeze().abs().cpu().detach().numpy()
-    heatmap_saliency = (heatmap_saliency - heatmap_saliency.min()) / (heatmap_saliency.max() - heatmap_saliency.min())
+    # Compute heatmaps
+    heatmap_saliency, heatmap_gradcam = create_saliency_and_gradcam_heatmaps(model, img_tensor, pred_class)
 
-    # ---- GRAD-CAM ----
-    # Find last conv layer dynamically
-    last_conv_layer = None
-    for layer in model.modules():
-        if isinstance(layer, torch.nn.Conv2d):
-            last_conv_layer = layer
-    assert last_conv_layer is not None, "No Conv2d layer found for Grad-CAM."
-
-    gradcam = LayerGradCam(model, last_conv_layer)
-    attr_gc = gradcam.attribute(img_tensor, target=pred_class)
-
-    # Grad-CAM upsample to match input size
-    if attr_gc.dim() == 4:
-        attr_gc = torch.nn.functional.interpolate(attr_gc, size=(28, 28), mode="bilinear", align_corners=False)
-    else:
-        raise ValueError(f"Expected 4D Grad-CAM output, got shape {attr_gc.shape}")
-
-    heatmap_gradcam = attr_gc.squeeze().cpu().detach().numpy()
-    heatmap_gradcam = (heatmap_gradcam - heatmap_gradcam.min()) / (heatmap_gradcam.max() - heatmap_gradcam.min())
-
-    # ---- VISUALIZATION ----
-    img_for_display = img_tensor.squeeze().cpu().detach().numpy()
-    img_for_display = img_for_display * 0.3081 + 0.1307  # reverse normalization
-
-    # --- Visualization (3 rows: original | saliency | grad-cam) ---
-    fig = plt.figure(figsize=(12, 14))
-    gs = fig.add_gridspec(3, 2, height_ratios=[1, 1, 1])  # 3 rows, 2 columns
-
-    # Define axes
-    ax_orig = fig.add_subplot(gs[0, :])  # top row spans both columns
-    ax_sal_overlay = fig.add_subplot(gs[1, 0])  # row 2 col 1
-    ax_sal_map = fig.add_subplot(gs[1, 1])  # row 2 col 2
-    ax_grad_overlay = fig.add_subplot(gs[2, 0])  # row 3 col 1
-    ax_grad_map = fig.add_subplot(gs[2, 1])  # row 3 col 2
-
-    # Original processed input (top row)
-    ax_orig.imshow(img_for_display, cmap="gray")
-    ax_orig.set_title("Processed Input ('9')", fontsize=14, pad=10)
-    ax_orig.axis("off")
-
-    # Saliency overlay (row 2 col 1)
-    ax_sal_overlay.imshow(img_for_display, cmap="gray")
-    ax_sal_overlay.imshow(heatmap_saliency, cmap="hot", alpha=0.5)
-    ax_sal_overlay.set_title(f"Saliency Overlay\n(Predicted: {pred_class})", fontsize=12)
-    ax_sal_overlay.axis("off")
-
-    # Raw saliency heatmap (row 2 col 2)
-    ax_sal_map.imshow(heatmap_saliency, cmap="hot")
-    ax_sal_map.set_title("Saliency Heatmap", fontsize=12)
-    ax_sal_map.axis("off")
-
-    # Grad-CAM overlay (row 3 col 1)
-    ax_grad_overlay.imshow(img_for_display, cmap="gray")
-    ax_grad_overlay.imshow(heatmap_gradcam, cmap="hot", alpha=0.5)
-    ax_grad_overlay.set_title(f"Grad-CAM Overlay\n(Predicted: {pred_class})", fontsize=12)
-    ax_grad_overlay.axis("off")
-
-    # Raw Grad-CAM heatmap (row 3 col 2)
-    ax_grad_map.imshow(heatmap_gradcam, cmap="hot")
-    ax_grad_map.set_title("Grad-CAM Heatmap", fontsize=12)
-    ax_grad_map.axis("off")
-
-    # Adjust spacing and layout
-    plt.subplots_adjust(wspace=0.15, hspace=0.25, left=0.05, right=0.95, top=0.93, bottom=0.05)
-
-    # Save figure
-    plt.savefig("TC-UAT-02_failure_analysis_9_to_8.png", bbox_inches="tight", dpi=200)
-    plt.close()
+    # Visualize
+    create_output_visualization(
+        img_tensor, heatmap_saliency, heatmap_gradcam, pred_class,
+        "TC-UAT-02_failure_analysis_9_to_8.png", title_suffix="'9'"
+    )
 
     # Assertions
     assert pred_class == 8, f"Expected misclassification as '8', got '{pred_class}'"
     assert heatmap_saliency.shape == (28, 28), "Saliency heatmap not generated correctly."
+    assert heatmap_gradcam.shape == (28, 28), "GradCam heatmap not generated correctly."
 
     upper_intensity = np.mean(heatmap_saliency[:14, :])
     lower_intensity = np.mean(heatmap_saliency[14:, :])
