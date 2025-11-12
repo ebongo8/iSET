@@ -2,11 +2,14 @@ import torch
 from src.classifier_model import ImageClassifier
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
-from PIL import Image
-import matplotlib.pyplot as plt
 from torchvision.transforms import ToPILImage
 import numpy as np
 import pandas as pd
+import torch.nn.functional as F
+from scipy.ndimage import gaussian_filter, binary_dilation
+from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageEnhance
+import matplotlib.pyplot as plt
+
 
 def get_device_type(windows_os=False):
     if windows_os:
@@ -74,35 +77,67 @@ def prepare_image(image_path, device, img_size=(28, 28)):
     return img_tensor
 
 
-def get_mnist_image(index=1, train_data_set=True, show=True):
+def find_index_for_label(label_input):
+    transform = transforms.Compose([transforms.ToTensor()])
+    mnist_dataset = datasets.MNIST(root="data", train=True, download=True, transform=transform)
+
+    # find indices of all samples labeled '9'
+    indices = [i for i, (_, label) in enumerate(mnist_dataset) if label == label_input]
+
+    print("Indices with label 9:", indices[:10])  # show first 10 for reference
+
+
+def get_mnist_image(index=11, train_data_set=True, show=True):
     """
-    Load a single MNIST sample and return a PIL image + label.
-    This function is just a backup if we ever need to access and view images from the MNIST dataset.
+    Load a single MNIST sample and return its normalized image array, PIL image, and label.
+
+    Args:
+        index (int): Index of the MNIST image to load.
+        train_data_set (bool): Whether to load from the training (True) or test (False) set.
+        show (bool): If True, display the image using matplotlib.
+
+    Returns:
+        tuple:
+            - img_array (np.ndarray): Normalized image array of shape (28, 28), values in [0, 1].
+            - img_pil (PIL.Image): The same image in PIL format.
+            - label (int): The corresponding digit label.
+
+    Notes:
+        - Uses torchvision’s MNIST dataset (downloads automatically if needed).
+        - Normalization is already handled by ToTensor(), so the array is in [0, 1].
+        - Saves the image locally as `mnist_<index>.png`.
     """
-    # transform used by the dataset (converts PIL -> Tensor)
+    # Define transform to convert PIL -> Tensor
     transform = transforms.Compose([
         transforms.ToTensor()
     ])
 
+    # Load dataset
     mnist_dataset = datasets.MNIST(
         root="data",
         train=train_data_set,
         download=True,
-        transform=transform  # <-- actually using the variable here
+        transform=transform
     )
 
-    img_tensor, label = mnist_dataset[index]  # tensor shape: [1,28,28], values in [0,1]
-    img_pil = ToPILImage()(img_tensor)         # convert back to PIL for display
+    # Retrieve sample
+    img_tensor, label = mnist_dataset[index]  # Tensor shape: [1, 28, 28], values in [0, 1]
+    img_pil = ToPILImage()(img_tensor)         # Convert to PIL for saving/display
 
+    # Convert to normalized NumPy array
+    img_array = img_tensor.squeeze().numpy()   # Shape: (28, 28), values in [0, 1]
+
+    # Show image if requested
     if show:
         plt.imshow(img_pil, cmap="gray")
         plt.title(f"Label: {label}")
         plt.axis("off")
         plt.show()
 
-    img_pil.save(f"mnist_{index}.png")
+    # Save image
+    # img_pil.save(f"mnist_{index}.png")
 
-    return img_pil, label
+    return img_array, label
 
 
 def get_emnist_image(csv_path):
@@ -140,8 +175,141 @@ def get_emnist_image(csv_path):
     plt.show()
 
 
+# # ============================================================
+# # Digit Image Loading
+# # ============================================================
+# def load_digit_image(digit, size=(28, 28)):
+#     """
+#     Load a single digit as a numpy array scaled to [0,1].
+#     Currently creates a placeholder image using PIL.
+#     Replace with actual MNIST loader if needed.
+#     """
+#     img = Image.new("L", size, color=0)
+#     draw = ImageDraw.Draw(img)
+#     draw.text((4, 4), str(digit), fill=255)
+#     img.save("test_img.png")
+#     return np.array(img, dtype=np.float32) / 255.0
+
+
+# ============================================================
+# Image Perturbation Functions
+# ============================================================
+def apply_geometric_perturbation(img, perturb_type, params):
+    """
+    Apply geometric modifications to simulate 'what if' scenarios.
+    Supported perturb_type values:
+    - close_loop, break_loop, erase_line, add_line, connect_loops,
+      extend_tail, straighten_arc, open_loop, dilate_stroke, remove_random_pixels
+    """
+    img_pil = Image.fromarray((img * 255).astype(np.uint8))
+    draw = ImageDraw.Draw(img_pil)
+
+    if perturb_type == "close_loop":
+        draw.line((5, 5, 10, 5), fill=255, width=params.get("width", 1))
+    elif perturb_type == "break_loop":
+        draw.line((5, 20, 10, 20), fill=0, width=params.get("width", 1))
+    elif perturb_type == "erase_line":
+        draw.rectangle((10, 10, 15, 15), fill=0)
+    elif perturb_type == "add_line":
+        draw.line((5, 14, 15, 14), fill=255, width=params.get("width", 1))
+    elif perturb_type == "connect_loops":
+        draw.line((5, 5, 15, 15), fill=255, width=params.get("width", 1))
+    elif perturb_type == "extend_tail":
+        draw.line((15, 20, 20, 23), fill=255, width=params.get("length", 1))
+    elif perturb_type == "straighten_arc":
+        draw.line((5, 5, 15, 5), fill=255, width=1)
+    elif perturb_type == "open_loop":
+        draw.rectangle((5, 15, 15, 20), fill=0)
+    elif perturb_type == "dilate_stroke":
+        img_pil = img_pil.filter(ImageFilter.MaxFilter(size=params.get("factor", 1)))
+    elif perturb_type == "remove_random_pixels":
+        img_arr = np.array(img_pil)
+        h, w = img_arr.shape
+        for _ in range(params.get("count", 5)):
+            x, y = np.random.randint(0, w), np.random.randint(0, h)
+            img_arr[y, x] = 0
+        img_pil = Image.fromarray(img_arr)
+
+    return np.array(img_pil, dtype=np.float32) / 255.0
+
+
+def flip_image(img):
+    """Horizontally flip the image."""
+    img_pil = Image.fromarray((img * 255).astype(np.uint8))
+    flipped = ImageOps.mirror(img_pil)
+    return np.array(flipped, dtype=np.float32) / 255.0
+
+
+def adjust_brightness(img, factor):
+    """Adjust image brightness by the given factor (>1 brighter, <1 darker)."""
+    img_pil = Image.fromarray((img * 255).astype(np.uint8))
+    enhancer = ImageEnhance.Brightness(img_pil)
+    img_pil = enhancer.enhance(factor)
+    return np.array(img_pil, dtype=np.float32) / 255.0
+
+
+def add_noise(img, amount=0.02):
+    """Add random Gaussian noise to the image, clipped to [0,1]."""
+    noise = np.random.randn(*img.shape) * amount
+    noisy_img = np.clip(img + noise, 0.0, 1.0)
+    return noisy_img
+
+
+def blur_image(img, sigma=1.0):
+    """Apply Gaussian blur to the entire image."""
+    img_pil = Image.fromarray((img * 255).astype(np.uint8))
+    blurred = img_pil.filter(ImageFilter.GaussianBlur(radius=sigma))
+    return np.array(blurred, dtype=np.float32) / 255.0
+
+
+# ============================================================
+# Counterfactual / OOD
+# ============================================================
+def generate_counterfactual(img, model):
+    """
+    Placeholder for CF generator.
+    For OOD input, returns None (safe).
+    """
+    return None
+
+
+# ============================================================
+# Counterfactual Metrics
+# ============================================================
+def compute_flip_rate(orig_pred, pert_pred):
+    """Binary flip rate between two scalar predictions (0 or 1)."""
+    return 1.0 if orig_pred != pert_pred else 0.0
+
+
+def compute_proximity_delta(orig_img, pert_img):
+    """Mean absolute pixel difference normalized to [0,1]."""
+    return float(np.mean(np.abs(orig_img - pert_img)))
+
+
+def compute_logit_stability(orig_logits, pert_logits):
+    """Cosine similarity between original and perturbed logits."""
+    orig = torch.tensor(orig_logits).float()
+    pert = torch.tensor(pert_logits).float()
+    cos_sim = F.cosine_similarity(orig, pert, dim=0)
+    return float(cos_sim.item())
+
+
+def compute_saliency(model, img):
+    """Compute simple gradient-based saliency map for a single image."""
+    model.eval()
+    device = next(model.parameters()).device
+    tensor = torch.tensor(img, dtype=torch.float32, requires_grad=True).unsqueeze(0).unsqueeze(0).to(device)
+    output = model(tensor)
+    pred = output.argmax(dim=1)
+    output[0, pred].backward()
+    saliency = tensor.grad.abs().squeeze().cpu().numpy()
+    saliency /= saliency.max() + 1e-8
+    return saliency
+
+
 if __name__ == "__main__":
-    get_mnist_image()
+    find_index_for_label(label_input=9)
+    # get_mnist_image(index=80)
 
     # Update to your local Kaggle CSV path
     # train_csv = "data/EMNIST/raw/emnist-letters-train.csv"
