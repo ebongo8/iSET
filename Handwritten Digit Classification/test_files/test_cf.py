@@ -2,6 +2,7 @@ import torch
 import pytest
 import os
 import numpy as np
+import matplotlib.pyplot as plt
 from test_files.utils import (
     get_device_type,
     load_trained_model,
@@ -19,7 +20,7 @@ from test_files.utils import (
 # --------------------------------
 # Helper Functions for CF Tests
 # --------------------------------
-def get_model_for_cf_tests():
+def get_trained_model_for_cf_tests():
     """
     Load the trained model and return it in evaluation mode on the correct device.
     """
@@ -50,7 +51,7 @@ def predict_class(model, device, img):
 # TC-CF-01: Shape sensitivity
 # ----------------------------
 def test_tc_cf_01_shape_sensitivity():
-    model, device = get_model_for_cf_tests()
+    model, device = get_trained_model_for_cf_tests()
 
     test_cases = [
         {"desc": "Close top loop of 3", "digit": "3", "label": 3, "type": "close_loop",
@@ -72,7 +73,7 @@ def test_tc_cf_01_shape_sensitivity():
     ]
 
     for case in test_cases:
-        orig_image = load_digit_image(case["digit"])
+        orig_image, _ = get_mnist_image(target_digit=case["digit"],index=None, train_data_set=True, show=True)
         perturbed_image = apply_geometric_perturbation(orig_image, case["type"], case["params"])
         pred_label = predict_class(model, device, perturbed_image)
         proximity_delta = compute_proximity_delta(orig_image, perturbed_image)
@@ -85,21 +86,71 @@ def test_tc_cf_01_shape_sensitivity():
 # TC-CF-02: Flip image
 # ----------------------------
 def test_tc_cf_02_flip_image():
-    model, device = get_model_for_cf_tests()
+    model, device = get_trained_model_for_cf_tests()
+    # change this to the indices you want to test (e.g. range(5), range(100), etc.)
+    indices = range(5)
 
-    for d in range(10):
-        # orig_image = load_digit_image(str(d))
-        orig_image = get_mnist_image(index=11, train_data_set=True, show=True)
+    results = []  # (index, orig_img, true_label, flipped_img, pred_label)
+
+    # Process all indices, collect results (do not assert inside the loop)
+    for i in indices:
+        orig_image, label = get_mnist_image(index=i, train_data_set=True, show=False)
         flipped_image = flip_image(orig_image)
         pred_label = predict_class(model, device, flipped_image)
-        assert pred_label == d, f"Prediction changed after horizontal flip for digit {d}"
+        results.append((i, orig_image, label, flipped_image, pred_label))
+
+    # ---------------------------------------------------------------------
+    # Compute summary statistics
+    # ---------------------------------------------------------------------
+    total = len(results)
+    num_correct = sum(1 for _, _, y, _, yhat in results if y == yhat)
+    pct_correct = (num_correct / total) * 100
+
+    # ---------------------------------------------------------------------
+    # Create the PNG summary for all processed indices
+    # ---------------------------------------------------------------------
+    n = len(results)
+    fig, axes = plt.subplots(nrows=n, ncols=2, figsize=(6, 2 * n))
+    fig.suptitle(
+        f"TC-CF-02 Flip Image Results\nAccuracy After Flip: {pct_correct:.1f}%",
+        fontsize=16
+    )
+    for row, (idx, orig_img, true_label, flip_img, pred_label) in enumerate(results):
+        ax_orig = axes[row, 0] if n > 1 else axes[0]
+        ax_flip = axes[row, 1] if n > 1 else axes[1]
+
+        ax_orig.imshow(orig_img, cmap="gray")
+        ax_orig.set_title(f"Original (Label: {true_label})")
+        ax_orig.axis("off")
+
+        ax_flip.imshow(flip_img, cmap="gray")
+        ax_flip.set_title(f"Flipped (Pred: {pred_label})")
+        ax_flip.axis("off")
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.savefig("TC-CF-02_flip_image_results.png")
+    plt.close()
+
+    # ---------------------------------------------------------------------
+    # Single assertion at the end: fail if any prediction changed
+    # ---------------------------------------------------------------------
+    mismatches = [
+        (idx, true_label, pred_label)
+        for idx, _, true_label, _, pred_label in results
+        if pred_label != true_label
+    ]
+
+    assert not mismatches, (
+        f"Prediction changed after horizontal flip for {len(mismatches)} samples. "
+        f"Examples (index, true, pred): {mismatches[:10]}"
+    )
 
 
 # ----------------------------
 # TC-CF-03: Brighten & strokes
 # ----------------------------
 def test_tc_cf_03_brightness_strokes():
-    model, device = get_model_for_cf_tests()
+    model, device = get_trained_model_for_cf_tests()
 
     test_cases = [
         {"desc": "Thicken middle stroke of 5", "digit": "5", "label": 5, "type": "dilate_stroke",
@@ -124,7 +175,7 @@ def test_tc_cf_03_brightness_strokes():
 # TC-CF-04: Ambiguous decision
 # ----------------------------
 def test_tc_cf_04_ambiguous_decision():
-    model, device = get_model_for_cf_tests()
+    model, device = get_trained_model_for_cf_tests()
 
     orig_image = load_digit_image("3")
     perturbed_image = apply_geometric_perturbation(orig_image, "straighten_arc", {})
@@ -136,7 +187,7 @@ def test_tc_cf_04_ambiguous_decision():
 # TC-CF-05: Blur
 # ----------------------------
 def test_tc_cf_05_blur():
-    model, device = get_model_for_cf_tests()
+    model, device = get_trained_model_for_cf_tests()
 
     orig_image = load_digit_image("8")
     perturbed_image = blur_image(orig_image, sigma=1.0)
@@ -148,7 +199,7 @@ def test_tc_cf_05_blur():
 # TC-CF-06: Noise
 # ----------------------------
 def test_tc_cf_06_noise():
-    model, device = get_model_for_cf_tests()
+    model, device = get_trained_model_for_cf_tests()
 
     # Remove 5 non-salient pixels
     orig_image = load_digit_image("5")
@@ -167,7 +218,7 @@ def test_tc_cf_06_noise():
 # TC-CF-07: OOD / Knowledge limits
 # ----------------------------
 def test_tc_cf_07_ood():
-    model, device = get_model_for_cf_tests()
+    model, device = get_trained_model_for_cf_tests()
 
     # Create simple 'A' placeholder as OOD input
     ood_image = np.zeros((28, 28))

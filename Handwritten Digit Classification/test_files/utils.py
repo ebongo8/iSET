@@ -87,32 +87,29 @@ def find_index_for_label(label_input):
     print("Indices with label 9:", indices[:10])  # show first 10 for reference
 
 
-def get_mnist_image(index=11, train_data_set=True, show=True):
+def get_mnist_image(target_digit=None, index=None, train_data_set=True, show=True):
     """
-    Load a single MNIST sample and return its normalized image array, PIL image, and label.
+    Load a single MNIST sample either by dataset index OR by specifying the digit (0-9).
 
     Args:
-        index (int): Index of the MNIST image to load.
-        train_data_set (bool): Whether to load from the training (True) or test (False) set.
-        show (bool): If True, display the image using matplotlib.
+        target_digit (int or None): The digit you want to load (0–9). If provided,
+                                    the function finds the first MNIST example of this digit.
+        index (int or None): If provided, loads the MNIST sample by index instead.
+                             If both index and target_digit are given, index takes priority.
+        train_data_set (bool): Load from training (True) or test (False) set.
+        show (bool): Display the image with matplotlib.
 
     Returns:
         tuple:
-            - img_array (np.ndarray): Normalized image array of shape (28, 28), values in [0, 1].
-            - img_pil (PIL.Image): The same image in PIL format.
-            - label (int): The corresponding digit label.
-
-    Notes:
-        - Uses torchvision’s MNIST dataset (downloads automatically if needed).
-        - Normalization is already handled by ToTensor(), so the array is in [0, 1].
-        - Saves the image locally as `mnist_<index>.png`.
+            - img_array (np.ndarray): Normalized image array, shape (28, 28), range [0, 1].
+            - label (int): Digit label.
     """
-    # Define transform to convert PIL -> Tensor
+    # Transform: PIL -> Tensor
     transform = transforms.Compose([
         transforms.ToTensor()
     ])
 
-    # Load dataset
+    # Load MNIST dataset
     mnist_dataset = datasets.MNIST(
         root="data",
         train=train_data_set,
@@ -120,14 +117,36 @@ def get_mnist_image(index=11, train_data_set=True, show=True):
         transform=transform
     )
 
-    # Retrieve sample
-    img_tensor, label = mnist_dataset[index]  # Tensor shape: [1, 28, 28], values in [0, 1]
-    img_pil = ToPILImage()(img_tensor)         # Convert to PIL for saving/display
+    # ----------------------------------------
+    # Case 1: Load by explicit index
+    # ----------------------------------------
+    if index is not None:
+        img_tensor, label = mnist_dataset[index]
 
-    # Convert to normalized NumPy array
-    img_array = img_tensor.squeeze().numpy()   # Shape: (28, 28), values in [0, 1]
+    # ----------------------------------------
+    # Case 2: Load by target digit (0–9)
+    # ----------------------------------------
+    elif target_digit is not None:
+        if not (0 <= target_digit <= 9):
+            raise ValueError("target_digit must be an integer between 0 and 9.")
 
-    # Show image if requested
+        # Search for the first example with this digit
+        for i in range(len(mnist_dataset)):
+            img_tensor, label = mnist_dataset[i]
+            if label == target_digit:
+                break
+        else:
+            raise ValueError(f"Digit {target_digit} not found in MNIST dataset!")
+
+    else:
+        raise ValueError("You must specify either `target_digit` or `index`.")
+
+    # Convert to PIL
+    img_pil = ToPILImage()(img_tensor)
+    # Convert to numpy array
+    img_array = img_tensor.squeeze().numpy()
+
+    # Optional display
     if show:
         plt.imshow(img_pil, cmap="gray")
         plt.title(f"Label: {label}")
