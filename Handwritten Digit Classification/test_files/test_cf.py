@@ -86,6 +86,10 @@ def test_tc_cf_01_shape_sensitivity():
 # TC-CF-02: Flip image
 # ----------------------------
 def test_tc_cf_02_flip_image():
+    """
+    Flip Image: Measure spatial invariance by horizontally mirroring input digits. Counterfactual metric outputted is stability for analysis
+    :return:
+    """
     model, device = get_trained_model_for_cf_tests()
     # change this to the indices you want to test (e.g. range(5), range(100), etc.)
     indices = range(5)
@@ -104,7 +108,7 @@ def test_tc_cf_02_flip_image():
     # ---------------------------------------------------------------------
     total = len(results)
     num_correct = sum(1 for _, _, y, _, yhat in results if y == yhat)
-    pct_correct = (num_correct / total) * 100
+    stability = (num_correct / total) * 100
 
     # ---------------------------------------------------------------------
     # Create the PNG summary for all processed indices
@@ -112,7 +116,7 @@ def test_tc_cf_02_flip_image():
     n = len(results)
     fig, axes = plt.subplots(nrows=n, ncols=2, figsize=(6, 2 * n))
     fig.suptitle(
-        f"TC-CF-02 Flip Image Results\nAccuracy After Flip: {pct_correct:.1f}%",
+        f"TC-CF-02 Flip Image Results\nStability: {stability:.1f}%",
         fontsize=16
     )
     for row, (idx, orig_img, true_label, flip_img, pred_label) in enumerate(results):
