@@ -87,8 +87,10 @@ def test_tc_cf_01_shape_sensitivity():
 # ----------------------------
 def test_tc_cf_02_flip_image():
     """
-    Flip Image: Measure spatial invariance by horizontally mirroring input digits. Counterfactual metric outputted is stability for analysis
-    :return:
+    TC-CF-01 Flip Image: Measure spatial invariance by horizontally mirroring input digits.
+    Counterfactual metric outputted is stability for analysis.
+
+    Expected resutls: Classification should remain stable after image flipping (same class prediction).
     """
     model, device = get_trained_model_for_cf_tests()
     # change this to the indices you want to test (e.g. range(5), range(100), etc.)
