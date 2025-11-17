@@ -6,9 +6,9 @@ from torchvision.transforms import ToPILImage
 import numpy as np
 import pandas as pd
 import torch.nn.functional as F
-from scipy.ndimage import gaussian_filter, binary_dilation
-from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageEnhance
+from PIL import Image, ImageFilter, ImageOps, ImageEnhance
 import matplotlib.pyplot as plt
+import random
 
 
 def get_device_type(windows_os=False):
@@ -87,14 +87,16 @@ def find_index_for_label(label_input):
     print("Indices with label 9:", indices[:10])  # show first 10 for reference
 
 
-def get_mnist_image(target_digit=None, index=None, train_data_set=True, show=True):
+def get_mnist_image(target_digit=None, target_index=0, index=None, train_data_set=True, show=True):
     """
     Load a single MNIST sample either by dataset index OR by specifying the digit (0-9).
+    Allows choosing a specific occurrence of the digit.
 
     Args:
         target_digit (int or None): The digit you want to load (0–9). If provided,
-                                    the function finds the first MNIST example of this digit.
-        index (int or None): If provided, loads the MNIST sample by index instead.
+                                    the function finds the target_index-th MNIST example of this digit.
+        target_index (int): Which occurrence of the target digit to load (0 = first, 1 = second, etc.).
+        index (int or None): If provided, loads the MNIST sample by dataset index instead.
                              If both index and target_digit are given, index takes priority.
         train_data_set (bool): Load from training (True) or test (False) set.
         show (bool): Display the image with matplotlib.
@@ -118,25 +120,27 @@ def get_mnist_image(target_digit=None, index=None, train_data_set=True, show=Tru
     )
 
     # ----------------------------------------
-    # Case 1: Load by explicit index
+    # Case 1: Load by explicit dataset index
     # ----------------------------------------
     if index is not None:
         img_tensor, label = mnist_dataset[index]
 
     # ----------------------------------------
-    # Case 2: Load by target digit (0–9)
+    # Case 2: Load by target digit
     # ----------------------------------------
     elif target_digit is not None:
         if not (0 <= target_digit <= 9):
             raise ValueError("target_digit must be an integer between 0 and 9.")
 
-        # Search for the first example with this digit
+        count = 0
         for i in range(len(mnist_dataset)):
             img_tensor, label = mnist_dataset[i]
             if label == target_digit:
-                break
+                if count == target_index:
+                    break
+                count += 1
         else:
-            raise ValueError(f"Digit {target_digit} not found in MNIST dataset!")
+            raise ValueError(f"Digit {target_digit} occurrence {target_index} not found!")
 
     else:
         raise ValueError("You must specify either `target_digit` or `index`.")
@@ -145,16 +149,15 @@ def get_mnist_image(target_digit=None, index=None, train_data_set=True, show=Tru
     img_pil = ToPILImage()(img_tensor)
     # Convert to numpy array
     img_array = img_tensor.squeeze().numpy()
+    # Save image
+    img_pil.save(f"mnist_{label}_{target_index}.png")
 
     # Optional display
     if show:
         plt.imshow(img_pil, cmap="gray")
-        plt.title(f"Label: {label}")
+        plt.title(f"Label: {label} (Occurrence: {target_index})")
         plt.axis("off")
         plt.show()
-
-    # Save image
-    # img_pil.save(f"mnist_{index}.png")
 
     return img_array, label
 
@@ -192,64 +195,6 @@ def get_emnist_image(csv_path):
     plt.imshow(rotated_img, cmap='gray')
     plt.axis('off')
     plt.show()
-
-
-# # ============================================================
-# # Digit Image Loading
-# # ============================================================
-# def load_digit_image(digit, size=(28, 28)):
-#     """
-#     Load a single digit as a numpy array scaled to [0,1].
-#     Currently creates a placeholder image using PIL.
-#     Replace with actual MNIST loader if needed.
-#     """
-#     img = Image.new("L", size, color=0)
-#     draw = ImageDraw.Draw(img)
-#     draw.text((4, 4), str(digit), fill=255)
-#     img.save("test_img.png")
-#     return np.array(img, dtype=np.float32) / 255.0
-
-
-# ============================================================
-# Image Perturbation Functions
-# ============================================================
-def apply_geometric_perturbation(img, perturb_type, params):
-    """
-    Apply geometric modifications to simulate 'what if' scenarios.
-    Supported perturb_type values:
-    - close_loop, break_loop, erase_line, add_line, connect_loops,
-      extend_tail, straighten_arc, open_loop, dilate_stroke, remove_random_pixels
-    """
-    img_pil = Image.fromarray((img * 255).astype(np.uint8))
-    draw = ImageDraw.Draw(img_pil)
-
-    if perturb_type == "close_loop":
-        draw.line((5, 5, 10, 5), fill=255, width=params.get("width", 1))
-    elif perturb_type == "break_loop":
-        draw.line((5, 20, 10, 20), fill=0, width=params.get("width", 1))
-    elif perturb_type == "erase_line":
-        draw.rectangle((10, 10, 15, 15), fill=0)
-    elif perturb_type == "add_line":
-        draw.line((5, 14, 15, 14), fill=255, width=params.get("width", 1))
-    elif perturb_type == "connect_loops":
-        draw.line((5, 5, 15, 15), fill=255, width=params.get("width", 1))
-    elif perturb_type == "extend_tail":
-        draw.line((15, 20, 20, 23), fill=255, width=params.get("length", 1))
-    elif perturb_type == "straighten_arc":
-        draw.line((5, 5, 15, 5), fill=255, width=1)
-    elif perturb_type == "open_loop":
-        draw.rectangle((5, 15, 15, 20), fill=0)
-    elif perturb_type == "dilate_stroke":
-        img_pil = img_pil.filter(ImageFilter.MaxFilter(size=params.get("factor", 1)))
-    elif perturb_type == "remove_random_pixels":
-        img_arr = np.array(img_pil)
-        h, w = img_arr.shape
-        for _ in range(params.get("count", 5)):
-            x, y = np.random.randint(0, w), np.random.randint(0, h)
-            img_arr[y, x] = 0
-        img_pil = Image.fromarray(img_arr)
-
-    return np.array(img_pil, dtype=np.float32) / 255.0
 
 
 def flip_image(img):
@@ -301,8 +246,30 @@ def compute_flip_rate(orig_pred, pert_pred):
 
 
 def compute_proximity_delta(orig_img, pert_img):
-    """Mean absolute pixel difference normalized to [0,1]."""
-    return float(np.mean(np.abs(orig_img - pert_img)))
+    """
+    Compute the proximity delta between an original and modified image.
+    Proximity measures how much the image had to be changed to influence the model.
+    Smaller values indicate smaller perturbations, meaning the change is subtle,
+    while larger values indicate more significant edits.
+
+    Metrics:
+        L1 (Mean Absolute Difference): Mean(|x_cf - x|)
+            - Captures the average magnitude of pixel changes.
+            - Treats all differences linearly; each pixel contributes equally.
+        L2 (Root Mean Squared Difference): sqrt(mean((x_cf - x)^2))
+            - Captures the quadratic magnitude of pixel changes.
+            - Penalizes larger changes more heavily than smaller ones.
+
+    Returns:
+        dict with:
+            "L1": float, mean absolute pixel difference
+            "L2": float, root mean squared pixel difference
+    """
+    diff = orig_img - pert_img
+    l1 = float(np.mean(np.abs(diff)))
+    l2 = float(np.sqrt(np.mean(diff ** 2)))
+
+    return {"L1": l1, "L2": l2}
 
 
 def compute_logit_stability(orig_logits, pert_logits):
@@ -326,10 +293,58 @@ def compute_saliency(model, img):
     return saliency
 
 
+def show_tensor_image(img_tensor, title="Image"):
+    """
+    Display a single grayscale image tensor as a PNG.
+
+    Args:
+        img_tensor (torch.Tensor): Tensor of shape [1, 1, H, W] or [1, H, W].
+    """
+    # Remove batch dimension if present
+    if img_tensor.dim() == 4:
+        img_tensor = img_tensor.squeeze(0)  # [1, H, W]
+
+    # Remove channel dimension if present
+    if img_tensor.dim() == 3:
+        img_tensor = img_tensor.squeeze(0)  # [H, W]
+
+    # Undo normalization (assumes mean=0.5, std=0.5)
+    img_array = img_tensor.cpu().detach().numpy()
+    img_array = (img_array * 0.5) + 0.5  # undo normalization
+    img_array = (img_array * 255).astype(np.uint8)
+
+    # Convert to PIL image and show
+    img_pil = Image.fromarray(img_array, mode='L')
+    img_pil.show(title=title)
+
+
+def get_tc_cf_01_test_images():
+    j = 0
+    num_list = [3, 8, 4, 1, 1, 0, 8, 9, 2, 3, 7, 7, 1, 6, 5]
+    for n in num_list:
+        if n == 4:
+            i = 16
+        elif n == 1 and j == 3:
+            i = 31
+        elif n == 6:
+            i = 9
+        else:
+            random.seed(0)
+            i = random.randint(1, 10)
+
+        img_array, label = get_mnist_image(target_digit=n, target_index=i, index=None, train_data_set=True, show=True)
+        j += 1
+
+
 if __name__ == "__main__":
     find_index_for_label(label_input=9)
-    # get_mnist_image(index=80)
 
+    # get_tc_cf_01_test_images()
+
+    # device_type = get_device_type(windows_os=False)
+    # device = torch.device(device_type)
+    # img_tensor = prepare_image("mnist_3.png", device, img_size=(28, 28))
+    # show_tensor_image(img_tensor)
     # Update to your local Kaggle CSV path
     # train_csv = "data/EMNIST/raw/emnist-letters-train.csv"
     # get_emnist_image(train_csv)
