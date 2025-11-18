@@ -331,21 +331,12 @@ def show_tensor_image(img_tensor, title="Image"):
 
 
 def get_tc_cf_01_test_images():
-    j = 0
-    num_list = [3, 8, 4, 1, 1, 0, 8, 9, 2, 3, 7, 7, 1, 6, 5]
-    for n in num_list:
-        if n == 4:
-            i = 16
-        elif n == 1 and j == 3:
-            i = 31
-        elif n == 6:
-            i = 9
-        else:
-            random.seed(0)
-            i = random.randint(1, 10)
-
+    num_list = [3, 8, 4, 1, 1, 0, 8, 9, 7, 6, 5]
+    ind_list = [7, 7, 16, 31, 7, 2, 7, 9, 7, 9, 7]
+    for j in range(0, len(num_list)+1):
+        n = num_list[j]
+        i = ind_list[j]
         img_array, label = get_mnist_image(target_digit=n, target_index=i, index=None, train_data_set=True, show=True)
-        j += 1
 
 
 if __name__ == "__main__":
