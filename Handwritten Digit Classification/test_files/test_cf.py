@@ -74,6 +74,7 @@ def test_tc_cf_01_shape_sensitivity():
     not trigger label flips unless they cross semantic boundaries. Proximity delta values
     within defined threshold.
     """
+    threshold = 0.03
     ORIG_DIR = "../test_images/CF_images/TC-CF-01_original"
     MOD_DIR = "../test_images/CF_images/TC-CF-01_modified"
 
@@ -125,7 +126,7 @@ def test_tc_cf_01_shape_sensitivity():
             "pred": pred_label,
             "prox": prox,
             "pass_pred": (pred_label == true_label),
-            "pass_prox": (prox["L1"] < 0.05)  # threshold on L1
+            "pass_prox": (prox["L1"] < threshold)  # threshold on L1
         })
 
     # ---------------------------------------------------------
@@ -155,8 +156,7 @@ def test_tc_cf_01_shape_sensitivity():
 
         ax_mod.imshow(res["mod_img"], cmap="gray")
         ax_mod.set_title(
-            f"{res['mod_fname']}\n"
-            f"Pred: {res['pred']} ({status_pred})\n"
+            f"Predicted: {res['pred']} ({status_pred})\n"
             f"L1 Δ = {res['prox']['L1']:.4f}, L2 Δ = {res['prox']['L2']:.4f} ({status_prox})"
         )
         ax_mod.axis("off")
