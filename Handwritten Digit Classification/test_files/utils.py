@@ -150,7 +150,7 @@ def get_mnist_image(target_digit=None, target_index=0, index=None, train_data_se
     # Convert to numpy array
     img_array = img_tensor.squeeze().numpy()
     # Save image
-    img_pil.save(f"mnist_{label}_{target_index}.png")
+    # img_pil.save(f"mnist_{label}_{target_index}.png")
 
     # Optional display
     if show:

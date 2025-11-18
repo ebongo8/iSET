@@ -206,12 +206,12 @@ def test_tc_cf_02_flip_image():
         pred_label = predict_class(model, device, flipped_image)
         results.append((i, orig_image, label, flipped_image, pred_label))
 
-    # ---------------------------------------------------------------------
-    # Compute summary statistics
-    # ---------------------------------------------------------------------
+    # ------------------------------------------------------------
+    # Compute flip rate
+    # ------------------------------------------------------------
     total = len(results)
-    num_correct = sum(1 for _, _, y, _, yhat in results if y == yhat)
-    stability = (num_correct / total) * 100
+    num_flipped = sum(1 for _, _, y, _, yhat in results if yhat != y)
+    flip_rate = (num_flipped / total) * 100
 
     # ---------------------------------------------------------------------
     # Create the PNG summary for all processed indices
@@ -219,9 +219,10 @@ def test_tc_cf_02_flip_image():
     n = len(results)
     fig, axes = plt.subplots(nrows=n, ncols=2, figsize=(6, 2 * n))
     fig.suptitle(
-        f"TC-CF-02 Flip Image Results\nStability: {stability:.1f}%",
+        f"TC-CF-02 Flip Image Results\nFlip Rate: {flip_rate:.1f}%",
         fontsize=16
     )
+
     for row, (idx, orig_img, true_label, flip_img, pred_label) in enumerate(results):
         ax_orig = axes[row, 0] if n > 1 else axes[0]
         ax_flip = axes[row, 1] if n > 1 else axes[1]
@@ -231,7 +232,7 @@ def test_tc_cf_02_flip_image():
         ax_orig.axis("off")
 
         ax_flip.imshow(flip_img, cmap="gray")
-        ax_flip.set_title(f"Flipped (Pred: {pred_label})")
+        ax_flip.set_title(f"Flipped (Predicted: {pred_label})")
         ax_flip.axis("off")
 
     plt.tight_layout(rect=[0, 0, 1, 0.96])
