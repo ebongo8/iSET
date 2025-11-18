@@ -240,9 +240,21 @@ def generate_counterfactual(img, model):
 # ============================================================
 # Counterfactual Metrics
 # ============================================================
-def compute_flip_rate(orig_pred, pert_pred):
-    """Binary flip rate between two scalar predictions (0 or 1)."""
-    return 1.0 if orig_pred != pert_pred else 0.0
+def compute_flip_rate(results):
+    """
+    Compute flip rate from a results list of tuples:
+    (index, orig_img, true_label, flipped_img, pred_label)
+    """
+    total = len(results)
+    if total == 0:
+        return 0.0
+
+    num_flipped = sum(
+        1 for _, _, true_label, _, pred_label in results
+        if pred_label != true_label
+    )
+    flip_rate = (num_flipped / total) * 100
+    return flip_rate
 
 
 def compute_proximity_delta(orig_img, pert_img):

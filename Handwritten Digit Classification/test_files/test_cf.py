@@ -15,6 +15,7 @@ from test_files.utils import (
     blur_image,
     generate_counterfactual,
     compute_proximity_delta,
+    compute_flip_rate
 )
 
 
@@ -206,12 +207,8 @@ def test_tc_cf_02_flip_image():
         pred_label = predict_class(model, device, flipped_image)
         results.append((i, orig_image, label, flipped_image, pred_label))
 
-    # ------------------------------------------------------------
-    # Compute flip rate
-    # ------------------------------------------------------------
-    total = len(results)
-    num_flipped = sum(1 for _, _, y, _, yhat in results if yhat != y)
-    flip_rate = (num_flipped / total) * 100
+    # Compute flip rate from results
+    flip_rate = compute_flip_rate(results)
 
     # ---------------------------------------------------------------------
     # Create the PNG summary for all processed indices
