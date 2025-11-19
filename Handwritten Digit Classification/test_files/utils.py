@@ -227,17 +227,6 @@ def blur_image(img, sigma=1.0):
 
 
 # ============================================================
-# Counterfactual / OOD
-# ============================================================
-def generate_counterfactual(img, model):
-    """
-    Placeholder for CF generator.
-    For OOD input, returns None (safe).
-    """
-    return None
-
-
-# ============================================================
 # Counterfactual Metrics
 # ============================================================
 def compute_flip_rate(results):
@@ -340,9 +329,10 @@ def get_tc_cf_01_test_images():
 
 
 if __name__ == "__main__":
-    find_index_for_label(label_input=9)
+    # find_index_for_label(label_input=9)
 
     # get_tc_cf_01_test_images()
+    img_array, label = get_mnist_image(target_digit=5, target_index=24, index=None, train_data_set=True, show=True)
 
     # device_type = get_device_type(windows_os=False)
     # device = torch.device(device_type)

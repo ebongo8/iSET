@@ -13,7 +13,6 @@ from test_files.utils import (
     adjust_brightness,
     add_noise,
     blur_image,
-    generate_counterfactual,
     compute_proximity_delta,
     compute_flip_rate
 )
@@ -252,28 +251,97 @@ def test_tc_cf_02_flip_image():
 
 
 # ----------------------------
-# TC-CF-03: Brighten & strokes
+# TC-CF-03: Brighten & Strokes
 # ----------------------------
 def test_tc_cf_03_brightness_strokes():
+    """
+    TC-CF-03 Brighten & Strokes:
+
+    1) Stroke thickening (digit 5):
+       • Compute flip rate.
+
+    2) Darken strokes by 10% (digits 0–9):
+       • Compute flip rate.
+
+    3) Brighten background (digits 0–9):
+       • Compute flip rate.
+
+    Metric:
+       - Flip Rate: % of class flips after perturbation.
+    """
     model, device = get_trained_model_for_cf_tests()
 
-    test_cases = [
-        {"desc": "Thicken middle stroke of 5", "digit": "5", "label": 5, "type": "dilate_stroke",
-         "params": {"factor": 1}},
-        {"desc": "Darken strokes by 10%", "digit": "5", "label": 5, "type": "brightness",
-         "params": {"factor": 0.9}},
-        {"desc": "Brighten background", "digit": "5", "label": 5, "type": "brightness",
-         "params": {"factor": 1.1}},
-    ]
+    # ============================================================
+    # (1) STROKE THICKENING — FLIP RATE (digit "5")
+    # ============================================================
+    cf_test_images_dir = "../test_images/CF_images"
+    orig_5_png = os.path.join(cf_test_images_dir, "mnist_5_24.png")
+    thickened_5_png = os.path.join(cf_test_images_dir, "thicken_stroke_5.png")
 
-    for case in test_cases:
-        orig_image = load_digit_image(case["digit"])
-        if case["type"] == "dilate_stroke":
-            perturbed_image = apply_geometric_perturbation(orig_image, "dilate_stroke", case["params"])
-        else:
-            perturbed_image = adjust_brightness(orig_image, case["params"]["factor"])
-        pred_label = predict_class(model, device, perturbed_image)
-        assert pred_label == case["label"], f"Prediction flipped for {case['desc']}"
+    orig_5_arr = load_image(orig_5_png)
+    thickened_5_arr = load_image(thickened_5_png)
+
+    results = []
+    pred_thick = predict_class(model, device, thickened_5_arr)
+
+    results.append((0, orig_5_png, 5, thickened_5_arr, pred_thick))
+    flip_rate_strokes = compute_flip_rate(results)
+
+    assert flip_rate_strokes == 0, (
+        f"Stroke thickening changed prediction! Flip Rate = {flip_rate_strokes:.1f}%"
+    )
+
+    # ============================================================
+    # (2) DARKEN STROKES BY 10% — FLIP RATE (digits 0–9)
+    # ============================================================
+    flip_results_darken = []
+
+    for digit in range(10):
+        orig_img, _ = get_mnist_image(target_digit=digit, target_index=0, show=False)
+        true_label = digit
+
+        dark_img = adjust_brightness(orig_img, factor=0.9)
+
+        pred_orig = predict_class(model, device, orig_img)
+        pred_dark = predict_class(model, device, dark_img)
+
+        flip_results_darken.append((digit, None, true_label, dark_img, pred_dark))
+
+    flip_rate_darken = compute_flip_rate(flip_results_darken)
+
+    assert flip_rate_darken < 5, (
+        f"[Darken 10%] Flip rate too high: {flip_rate_darken:.2f}%"
+    )
+
+    # ============================================================
+    # (3) BRIGHTEN BACKGROUND — FLIP RATE (digits 0–9)
+    # ============================================================
+    flip_results_bright = []
+
+    for digit in range(10):
+        orig_img, _ = get_mnist_image(target_digit=digit, target_index=0, show=False)
+        true_label = digit
+
+        bright_img = adjust_brightness(orig_img, factor=1.1)
+
+        pred_orig = predict_class(model, device, orig_img)
+        pred_bright = predict_class(model, device, bright_img)
+
+        flip_results_bright.append((digit, None, true_label, bright_img, pred_bright))
+
+    flip_rate_bright = compute_flip_rate(flip_results_bright)
+
+    assert flip_rate_bright < 5, (
+        f"[Brighten BG] Flip rate too high: {flip_rate_bright:.2f}%"
+    )
+
+    # ============================================================
+    # SUMMARY PRINT (does not affect pass/fail)
+    # ============================================================
+    print("\n=== TC-CF-03 Summary ===")
+    print(f"Flip Rate (Stroke Thickening): {flip_rate_strokes:.2f}%")
+    print(f"Flip Rate (Darken 10%): {flip_rate_darken:.2f}%")
+    print(f"Flip Rate (Brighten BG): {flip_rate_bright:.2f}%")
 
 
 # ----------------------------
