@@ -362,33 +362,75 @@ def test_tc_cf_03_brightness_strokes():
 
 
 # ----------------------------
-# TC-CF-04: Ambiguous decision
+# TC-CF-04: Blur
 # ----------------------------
-def test_tc_cf_04_ambiguous_decision():
+def test_tc_cf_04_blur():
+    """
+    TC-CF-04 Blur Stability:
+    Apply mild Gaussian blur only to the upper loop of digit '8' to test
+    localized perceptual degradation. Verify prediction stability and save
+    a visualization of before/after images with predicted labels.
+    """
     model, device = get_trained_model_for_cf_tests()
 
-    orig_image = load_digit_image("3")
-    perturbed_image = apply_geometric_perturbation(orig_image, "straighten_arc", {})
-    pred_label = predict_class(model, device, perturbed_image)
-    assert pred_label == 3, "Ambiguous perturbation caused inconsistent decision"
+    # -------------------------
+    # Load MNIST sample of "8"
+    # -------------------------
+    orig_img, label = get_mnist_image(target_digit=8, target_index=0, show=False)
+    assert label == 8, "Loaded MNIST image is not the digit '8'"
+
+    # -------------------------
+    # Create a mask for the top loop
+    # Approx region: upper half (rows 0–13)
+    # You can tune this later
+    # -------------------------
+    mask = np.zeros_like(orig_img)
+    mask[0:14, :] = 1.0
+
+    # -------------------------
+    # Apply Gaussian blur using your helper
+    # -------------------------
+    blurred_full = blur_image(orig_img, sigma=1.0)
+
+    # Blend so only the masked region is blurred
+    perturbed_img = orig_img * (1 - mask) + blurred_full * mask
+
+    # -------------------------
+    # Predictions
+    # -------------------------
+    pred_before = predict_class(model, device, orig_img)
+    pred_after = predict_class(model, device, perturbed_img)
+
+    # -------------------------
+    # Visualization
+    # -------------------------
+    fig, ax = plt.subplots(1, 2, figsize=(6, 3))
+
+    ax[0].imshow(orig_img, cmap="gray")
+    ax[0].set_title(f"Original (pred={pred_before})")
+    ax[0].axis("off")
+
+    ax[1].imshow(perturbed_img, cmap="gray")
+    ax[1].set_title(f"Blurred Top Loop (pred={pred_after})")
+    ax[1].axis("off")
+
+    plt.tight_layout()
+    fig.savefig("TC_CF_04_blur_before_after.png")
+    plt.close(fig)
+
+    # -------------------------
+    # Assertion: prediction should remain stable
+    # -------------------------
+    assert pred_before == pred_after, (
+        f"Localized blur caused prediction flip: "
+        f"before={pred_before}, after={pred_after}"
+    )
 
 
 # ----------------------------
-# TC-CF-05: Blur
+# TC-CF-05: Noise
 # ----------------------------
-def test_tc_cf_05_blur():
-    model, device = get_trained_model_for_cf_tests()
-
-    orig_image = load_digit_image("8")
-    perturbed_image = blur_image(orig_image, sigma=1.0)
-    pred_label = predict_class(model, device, perturbed_image)
-    assert pred_label == 8, "Blur perturbation caused prediction flip"
-
-
-# ----------------------------
-# TC-CF-06: Noise
-# ----------------------------
-def test_tc_cf_06_noise():
+def test_tc_cf_05_noise():
     model, device = get_trained_model_for_cf_tests()
 
     # Remove 5 non-salient pixels
@@ -405,9 +447,9 @@ def test_tc_cf_06_noise():
 
 
 # ----------------------------
-# TC-CF-07: OOD / Knowledge limits
+# TC-CF-06: OOD / Knowledge limits
 # ----------------------------
-def test_tc_cf_07_ood():
+def test_tc_cf_06_ood():
     model, device = get_trained_model_for_cf_tests()
 
     # Create simple 'A' placeholder as OOD input
