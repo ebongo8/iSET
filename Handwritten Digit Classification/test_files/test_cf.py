@@ -107,7 +107,6 @@ def test_tc_cf_01_shape_sensitivity():
         digit_match = re.search(r"mnist_(\d)", orig_fname)
         if not digit_match:
             raise ValueError(f"Cannot infer digit label from filename: {orig_fname}")
-
         true_label = int(digit_match.group(1))
 
         # Predict
@@ -130,38 +129,56 @@ def test_tc_cf_01_shape_sensitivity():
         })
 
     # ---------------------------------------------------------
-    #   CREATE SUMMARY PNG
+    #   CREATE SUMMARY PNG + FLIP RATE
     # ---------------------------------------------------------
+    # SORT RESULTS IN ASCENDING Q-ORDER
+    results.sort(key=lambda r: int(re.search(r"Q(\d+)_", r["prefix"]).group(1)))
+
+    # Compute flip rate for the figure title
+    flip_rate = compute_flip_rate([
+        (None, None, res["true"], None, res["pred"])
+        for res in results
+    ])
+
     n = len(results)
     fig, axes = plt.subplots(nrows=n, ncols=2, figsize=(10, 3 * n))
-    fig.suptitle("TC-CF-01 Shape Sensitivity — Original vs Modified", fontsize=18)
+
+    fig.suptitle(
+        f"TC-CF-01 Shape Sensitivity — Original vs Modified\n"
+        f"Flip Rate = {flip_rate:.2f}%",
+        fontsize=24,
+        y=0.98
+    )
 
     if n == 1:
-        axes = np.array([axes])  # Ensure consistent 2D indexing
+        axes = np.array([axes])  # Keep 2D indexing consistent
 
     for i, res in enumerate(results):
         ax_orig = axes[i, 0]
         ax_mod = axes[i, 1]
 
-        # Original
+        # Original image
         ax_orig.imshow(res["orig_img"], cmap="gray")
         ax_orig.set_title(
-            f"Original: {res['orig_fname']}\nDigit {res['true']}"
+            f"Original\nDigit {res['true']}",
+            fontsize=18
         )
         ax_orig.axis("off")
 
-        # Modified + results
+        # Modified image + metrics
         status_pred = "PASS" if res["pass_pred"] else "FAIL"
         status_prox = "PASS" if res["pass_prox"] else "FAIL"
 
         ax_mod.imshow(res["mod_img"], cmap="gray")
         ax_mod.set_title(
             f"Predicted: {res['pred']} ({status_pred})\n"
-            f"L1 Δ = {res['prox']['L1']:.4f}, L2 Δ = {res['prox']['L2']:.4f} ({status_prox})"
+            # f"L1 Δ={res['prox']['L1']:.4f}, L2 Δ={res['prox']['L2']:.4f} ({status_prox})"
+            f"L1 Δ={res['prox']['L1']:.4f} ({status_prox})",
+            fontsize=18
         )
         ax_mod.axis("off")
 
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
     plt.savefig("TC-CF-01_shape_sensitivity_summary.png")
     plt.close()
 
@@ -171,13 +188,13 @@ def test_tc_cf_01_shape_sensitivity():
     ]
     # Remove img arrays from res dictionaries so they don't print if assertion fails
     for res in failures:
-        res.pop("orig_img")
-        res.pop("mod_img")
+        res.pop("orig_img", None)
+        res.pop("mod_img", None)
 
     assert not failures, (
         "TC-CF-01 failed for:\n" +
         "\n".join(
-            f"{res['prefix']}  true={res['true']} pred={res['pred']}  "
+            f"{res['prefix']} true={res['true']} pred={res['pred']} "
             f"L1={res['prox']['L1']:.4f}, L2={res['prox']['L2']:.4f}"
             for res in failures
         )
