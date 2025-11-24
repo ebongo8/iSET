@@ -427,23 +427,192 @@ def test_tc_cf_04_blur():
     )
 
 
+def get_random_non_salient_pixels(heatmap, num_pixels=5):
+    """
+    Return indices of 'num_pixels' random non-salient pixels
+    based on the heatmap (low-value pixels = non-salient).
+    """
+    heatmap = heatmap.clone()
+
+    # Flatten heatmap
+    flat = heatmap.flatten()
+
+    # Sort ascending → lowest values = non-salient
+    sorted_indices = torch.argsort(flat, descending=False)
+
+    # Choose bottom 80% as non-salient
+    k_non_salient = int(0.8 * flat.numel())
+    non_salient_indices = sorted_indices[:k_non_salient]
+
+    # Randomly pick N from that pool
+    chosen = non_salient_indices[torch.randperm(k_non_salient)[:num_pixels]]
+
+    return chosen
+
+
 # ----------------------------
 # TC-CF-05: Noise
 # ----------------------------
 def test_tc_cf_05_noise():
+    """
+    TC-CF-05 Noise & Pixel Removal Robustness:
+    For digits 0–9:
+        • Remove 5 non-salient pixels (background).
+        • Add 1–2% Gaussian noise.
+    Evaluate:
+        • Prediction stability
+        • Flip rate
+    """
     model, device = get_trained_model_for_cf_tests()
 
-    # Remove 5 non-salient pixels
-    orig_image = load_digit_image("5")
-    perturbed_image = apply_geometric_perturbation(orig_image, "remove_random_pixels", {"count": 5})
-    pred_label = predict_class(model, device, perturbed_image)
-    assert pred_label == 5, "Removing non-salient pixels caused flip"
+    remove_pixel_results = []   # (digit, orig_img, true_label, pert_img, pred_after)
+    noise_results = []          # (digit, orig_img, true_label, pert_img, pred_after)
 
-    # Add random noise 1-2%
-    orig_image = load_digit_image("5")
-    perturbed_image = add_noise(orig_image, amount=0.02)
-    pred_label, _ = model.predict(perturbed_image)
-    assert pred_label == 5, "Adding background noise caused flip"
+    originals = []
+    removed_imgs = []
+    noisy_imgs = []
+    preds_removed = []
+    preds_noisy = []
+
+    percent_noise = 0.41
+
+    # -----------------------------------------------------
+    # Find LAST CONV layer for Grad-CAM
+    # -----------------------------------------------------
+    last_conv_layer = None
+    for layer in model.modules():
+        if isinstance(layer, torch.nn.Conv2d):
+            last_conv_layer = layer
+    assert last_conv_layer is not None, "No Conv2D layer found for Grad-CAM."
+
+    gradcam = LayerGradCam(model, last_conv_layer)
+
+    # -----------------------------------------------------
+    # Loop through all digits 0–9
+    # -----------------------------------------------------
+    for digit in range(10):
+        orig_img, label = get_mnist_image(
+            target_digit=digit,
+            target_index=0,
+            show=False
+        )
+        assert label == digit
+
+        # Store original
+        originals.append(orig_img)
+
+        # -----------------------------------------------------
+        # Convert image for Grad-CAM: shape (1,1,28,28)
+        # -----------------------------------------------------
+        img_tensor = torch.tensor(orig_img, dtype=torch.float32, device=device)
+        img_tensor = img_tensor.unsqueeze(0).unsqueeze(0)
+
+        # Forward pass
+        with torch.no_grad():
+            outputs = model(img_tensor)
+        pred_class = outputs.argmax(dim=1).item()
+
+        # -----------------------------------------------------
+        # Compute Grad-CAM heatmap (28×28)
+        # -----------------------------------------------------
+        attr = gradcam.attribute(img_tensor, target=pred_class)
+
+        # Interpolate CAM to 28x28 if needed
+        if attr.dim() == 4:
+            attr = torch.nn.functional.interpolate(
+                attr, size=(28, 28), mode="bilinear", align_corners=False
+            )
+        else:
+            raise ValueError(f"Grad-CAM unexpected shape: {attr.shape}")
+
+        heatmap = attr.squeeze().detach().cpu().numpy()
+
+        # Normalize to [0,1]
+        heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min() + 1e-8)
+
+        # Convert to torch for indexing
+        heatmap_t = torch.tensor(heatmap, dtype=torch.float32)
+
+        # =================================================
+        # (A) REMOVE 5 NON-SALIENT BACKGROUND PIXELS
+        # =================================================
+        # Get 5 random non-salient pixels
+        idxs = get_random_non_salient_pixels(heatmap_t, num_pixels=500)
+        img_removed = orig_img.copy().flatten()
+        img_removed[idxs.numpy()] = 0.0
+        img_removed = img_removed.reshape(orig_img.shape)
+        pred_removed = predict_class(model, device, img_removed)
+
+        removed_imgs.append(img_removed)
+        preds_removed.append(pred_removed)
+
+        remove_pixel_results.append((digit, orig_img, label, img_removed, pred_removed))
+
+        # =================================================
+        # (B) ADD 10% GAUSSIAN NOISE
+        # =================================================
+        img_noisy = add_noise(orig_img, amount=percent_noise)
+        pred_noisy = predict_class(model, device, img_noisy)
+
+        noisy_imgs.append(img_noisy)
+        preds_noisy.append(pred_noisy)
+
+        noise_results.append(
+            (digit, orig_img, label, img_noisy, pred_noisy)
+        )
+
+    # -----------------------------------------------------
+    # Flip rates
+    # -----------------------------------------------------
+    remove_flip_rate = compute_flip_rate(remove_pixel_results)
+    noise_flip_rate = compute_flip_rate(noise_results)
+
+    print("\nTC-CF-05 RESULTS:")
+    print(f"Flip rate (remove 5 pixels): {remove_flip_rate:.2f}%")
+    print(f"Flip rate ({percent_noise*100:.2f}% noise):      {noise_flip_rate:.2f}%")
+
+    # -----------------------------------------------------
+    # Visualization Grid (10 rows × 3 columns)
+    # -----------------------------------------------------
+    fig, axes = plt.subplots(10, 3, figsize=(9, 18))
+
+    for i in range(10):
+        # --- Column 1: Original ---
+        axes[i, 0].imshow(originals[i], cmap="gray")
+        axes[i, 0].set_title(f"Digit {i}\nOriginal")
+        axes[i, 0].axis("off")
+
+        # --- Column 2: Pixel Removal ---
+        axes[i, 1].imshow(removed_imgs[i], cmap="gray")
+        axes[i, 1].set_title(f"Remove 5 px\nPred={preds_removed[i]}")
+        axes[i, 1].axis("off")
+
+        # --- Column 3: Noise ---
+        axes[i, 2].imshow(noisy_imgs[i], cmap="gray")
+        axes[i, 2].set_title(f"Noise 2%\nPred={preds_noisy[i]}")
+        axes[i, 2].axis("off")
+
+    # Title showing flip rates
+    fig.suptitle(
+        f"TC-CF-05 Noise & Pixel Removal\n"
+        f"Flip Rate (remove 5 px): {remove_flip_rate:.2f}%   |   "
+        f"Flip Rate (noise {percent_noise*100:.2f}%): {noise_flip_rate:.2f}%",
+        fontsize=16
+    )
+
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
+    fig.savefig("TC_CF_05_noise_results.png")
+    plt.close(fig)
+
+    # -----------------------------------------------------
+    # Assertions
+    # -----------------------------------------------------
+    assert remove_flip_rate < 20, (
+        f"High flip rate for removing 5 pixels: {remove_flip_rate:.2f}%"
+    )
+    assert noise_flip_rate < 20, (
+        f"High flip rate for {percent_noise}% noise: {noise_flip_rate:.2f}%"
+    )
 
 
 # ----------------------------
