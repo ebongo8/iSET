@@ -16,6 +16,7 @@ from test_files.utils import (
     compute_proximity_delta,
     compute_flip_rate
 )
+from captum.attr import Saliency, LayerGradCam
 
 
 # --------------------------------
@@ -432,6 +433,9 @@ def get_random_non_salient_pixels(heatmap, num_pixels=5):
     Return indices of 'num_pixels' random non-salient pixels
     based on the heatmap (low-value pixels = non-salient).
     """
+    seed = 100
+    torch.manual_seed(seed)  # Set seed for reproducibility
+
     heatmap = heatmap.clone()
 
     # Flatten heatmap
@@ -450,6 +454,31 @@ def get_random_non_salient_pixels(heatmap, num_pixels=5):
     return chosen
 
 
+def remove_non_salient_pixels(orig_img, heatmap_t, n_pixels):
+    """
+    TC-CF-05 Helper: remove N non-salient pixels based on Grad-CAM heatmap
+    Remove N lowest-saliency pixels (set to 0).
+    Returns modified image.
+    """
+    idxs = get_random_non_salient_pixels(heatmap_t, num_pixels=n_pixels)
+
+    img_flat = orig_img.copy().flatten()
+    img_flat[idxs.numpy()] = 0.0
+
+    return img_flat.reshape(orig_img.shape)
+
+
+def apply_gaussian_noise(orig_img, amount):
+    """
+    TC-CF-05 Helper: apply Gaussian noise
+    Adds Gaussian noise scaled by `amount` (e.g., 0.10 for 10%).
+    """
+    np.random.seed(42)  # Set seed for reproducibility
+    noise = np.random.normal(0, amount, orig_img.shape)
+    noisy = orig_img + noise
+    return np.clip(noisy, 0, 1)
+
+
 # ----------------------------
 # TC-CF-05: Noise
 # ----------------------------
@@ -457,27 +486,34 @@ def test_tc_cf_05_noise():
     """
     TC-CF-05 Noise & Pixel Removal Robustness:
     For digits 0–9:
-        • Remove 5 non-salient pixels (background).
-        • Add 1–2% Gaussian noise.
-    Evaluate:
-        • Prediction stability
-        • Flip rate
+        • Remove 5 low-saliency pixels
+        • Remove 100 low-saliency pixels
+        • Add 10% Gaussian noise
+        • Add 40% Gaussian noise
+    Produces two output figures:
+        1) Pixel_removal.png
+        2) Noise_results.png
     """
     model, device = get_trained_model_for_cf_tests()
 
-    remove_pixel_results = []   # (digit, orig_img, true_label, pert_img, pred_after)
-    noise_results = []          # (digit, orig_img, true_label, pert_img, pred_after)
+    remove_5_results = []
+    remove_100_results = []
+    noise_10_results = []
+    noise_40_results = []
 
     originals = []
-    removed_imgs = []
-    noisy_imgs = []
-    preds_removed = []
-    preds_noisy = []
+    removed_5_imgs = []
+    removed_100_imgs = []
+    noisy_10_imgs = []
+    noisy_40_imgs = []
 
-    percent_noise = 0.41
+    preds_removed_5 = []
+    preds_removed_100 = []
+    preds_noisy_10 = []
+    preds_noisy_40 = []
 
     # -----------------------------------------------------
-    # Find LAST CONV layer for Grad-CAM
+    # Find last Conv2D for Grad-CAM
     # -----------------------------------------------------
     last_conv_layer = None
     for layer in model.modules():
@@ -492,13 +528,9 @@ def test_tc_cf_05_noise():
     # -----------------------------------------------------
     for digit in range(10):
         orig_img, label = get_mnist_image(
-            target_digit=digit,
-            target_index=0,
-            show=False
+            target_digit=digit, target_index=0, show=False
         )
         assert label == digit
-
-        # Store original
         originals.append(orig_img)
 
         # -----------------------------------------------------
@@ -512,9 +544,7 @@ def test_tc_cf_05_noise():
             outputs = model(img_tensor)
         pred_class = outputs.argmax(dim=1).item()
 
-        # -----------------------------------------------------
         # Compute Grad-CAM heatmap (28×28)
-        # -----------------------------------------------------
         attr = gradcam.attribute(img_tensor, target=pred_class)
 
         # Interpolate CAM to 28x28 if needed
@@ -526,92 +556,150 @@ def test_tc_cf_05_noise():
             raise ValueError(f"Grad-CAM unexpected shape: {attr.shape}")
 
         heatmap = attr.squeeze().detach().cpu().numpy()
-
         # Normalize to [0,1]
         heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min() + 1e-8)
-
         # Convert to torch for indexing
         heatmap_t = torch.tensor(heatmap, dtype=torch.float32)
 
         # =================================================
-        # (A) REMOVE 5 NON-SALIENT BACKGROUND PIXELS
+        # REMOVE 5 PIXELS
         # =================================================
-        # Get 5 random non-salient pixels
-        idxs = get_random_non_salient_pixels(heatmap_t, num_pixels=500)
-        img_removed = orig_img.copy().flatten()
-        img_removed[idxs.numpy()] = 0.0
-        img_removed = img_removed.reshape(orig_img.shape)
-        pred_removed = predict_class(model, device, img_removed)
+        img_removed_5 = remove_non_salient_pixels(orig_img, heatmap_t, 5)
+        pred_removed_5 = predict_class(model, device, img_removed_5)
 
-        removed_imgs.append(img_removed)
-        preds_removed.append(pred_removed)
+        removed_5_imgs.append(img_removed_5)
+        preds_removed_5.append(pred_removed_5)
 
-        remove_pixel_results.append((digit, orig_img, label, img_removed, pred_removed))
+        remove_5_results.append((digit, orig_img, label, img_removed_5, pred_removed_5))
 
         # =================================================
-        # (B) ADD 10% GAUSSIAN NOISE
+        # REMOVE 100 PIXELS
         # =================================================
-        img_noisy = add_noise(orig_img, amount=percent_noise)
-        pred_noisy = predict_class(model, device, img_noisy)
+        img_removed_100 = remove_non_salient_pixels(orig_img, heatmap_t, 150)
+        pred_removed_100 = predict_class(model, device, img_removed_100)
 
-        noisy_imgs.append(img_noisy)
-        preds_noisy.append(pred_noisy)
+        removed_100_imgs.append(img_removed_100)
+        preds_removed_100.append(pred_removed_100)
 
-        noise_results.append(
-            (digit, orig_img, label, img_noisy, pred_noisy)
+        remove_100_results.append(
+            (digit, orig_img, label, img_removed_100, pred_removed_100)
+        )
+
+        # =================================================
+        # ADD 10% NOISE
+        # =================================================
+        img_noisy_10 = apply_gaussian_noise(orig_img, amount=0.10)
+        pred_noisy_10 = predict_class(model, device, img_noisy_10)
+
+        noisy_10_imgs.append(img_noisy_10)
+        preds_noisy_10.append(pred_noisy_10)
+
+        noise_10_results.append(
+            (digit, orig_img, label, img_noisy_10, pred_noisy_10)
+        )
+
+        # =================================================
+        # ADD 40% NOISE
+        # =================================================
+        img_noisy_40 = apply_gaussian_noise(orig_img, amount=0.40)
+        pred_noisy_40 = predict_class(model, device, img_noisy_40)
+
+        noisy_40_imgs.append(img_noisy_40)
+        preds_noisy_40.append(pred_noisy_40)
+
+        noise_40_results.append(
+            (digit, orig_img, label, img_noisy_40, pred_noisy_40)
         )
 
     # -----------------------------------------------------
     # Flip rates
     # -----------------------------------------------------
-    remove_flip_rate = compute_flip_rate(remove_pixel_results)
-    noise_flip_rate = compute_flip_rate(noise_results)
+    flip_5 = compute_flip_rate(remove_5_results)
+    flip_100 = compute_flip_rate(remove_100_results)
+    flip_10 = compute_flip_rate(noise_10_results)
+    flip_40 = compute_flip_rate(noise_40_results)
 
     print("\nTC-CF-05 RESULTS:")
-    print(f"Flip rate (remove 5 pixels): {remove_flip_rate:.2f}%")
-    print(f"Flip rate ({percent_noise*100:.2f}% noise):      {noise_flip_rate:.2f}%")
+    print(f"Flip rate (5px removed):   {flip_5:.2f}%")
+    print(f"Flip rate (100px removed): {flip_100:.2f}%")
+    print(f"Flip rate (10% noise):     {flip_10:.2f}%")
+    print(f"Flip rate (40% noise):     {flip_40:.2f}%")
 
     # -----------------------------------------------------
-    # Visualization Grid (10 rows × 3 columns)
+    # FIGURE 1 — Non-Salient Pixel Removal Results
     # -----------------------------------------------------
-    fig, axes = plt.subplots(10, 3, figsize=(9, 18))
+    fig1, ax1 = plt.subplots(10, 3, figsize=(8, 18))
 
     for i in range(10):
-        # --- Column 1: Original ---
-        axes[i, 0].imshow(originals[i], cmap="gray")
-        axes[i, 0].set_title(f"Digit {i}\nOriginal")
-        axes[i, 0].axis("off")
+        # --- Column 1: Originals ---
+        ax1[i, 0].imshow(originals[i], cmap="gray")
+        ax1[i, 0].set_title(f"Original Digit {i}")
+        ax1[i, 0].axis("off")
 
-        # --- Column 2: Pixel Removal ---
-        axes[i, 1].imshow(removed_imgs[i], cmap="gray")
-        axes[i, 1].set_title(f"Remove 5 px\nPred={preds_removed[i]}")
-        axes[i, 1].axis("off")
+        # --- Column 2: Remove 5 ---
+        ax1[i, 1].imshow(removed_5_imgs[i], cmap="gray")
+        ax1[i, 1].set_title(f"Pred={preds_removed_5[i]}", fontsize=12)
+        ax1[i, 1].axis("off")
 
-        # --- Column 3: Noise ---
-        axes[i, 2].imshow(noisy_imgs[i], cmap="gray")
-        axes[i, 2].set_title(f"Noise 2%\nPred={preds_noisy[i]}")
-        axes[i, 2].axis("off")
+        # --- Column 3: Remove 100 ---
+        ax1[i, 2].imshow(removed_100_imgs[i], cmap="gray")
+        ax1[i, 2].set_title(f"Pred={preds_removed_100[i]}", fontsize=12)
+        ax1[i, 2].axis("off")
 
-    # Title showing flip rates
-    fig.suptitle(
-        f"TC-CF-05 Noise & Pixel Removal\n"
-        f"Flip Rate (remove 5 px): {remove_flip_rate:.2f}%   |   "
-        f"Flip Rate (noise {percent_noise*100:.2f}%): {noise_flip_rate:.2f}%",
+    fig1.suptitle(
+        f"Pixel Removal Results\nFlip Rate (5px)={flip_5:.2f}% | Flip Rate (100px)={flip_100:.2f}%",
         fontsize=16
     )
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    fig1.savefig("TC_CF_05_pixel_removal.png")
+    plt.close(fig1)
 
-    plt.tight_layout(rect=[0, 0, 1, 0.97])
-    fig.savefig("TC_CF_05_noise_results.png")
-    plt.close(fig)
+    # -----------------------------------------------------
+    # FIGURE 2 — Noise Results
+    # -----------------------------------------------------
+    fig2, ax2 = plt.subplots(10, 3, figsize=(8, 18))
+
+    for i in range(10):
+        # --- Column 1: Originals ---
+        ax2[i, 0].imshow(originals[i], cmap="gray")
+        ax2[i, 0].set_title(f"Original Digit {i}")
+        ax2[i, 0].axis("off")
+
+        # --- Column 2: Noise 10% ---
+        ax2[i, 1].imshow(noisy_10_imgs[i], cmap="gray")
+        ax2[i, 1].set_title(f"Pred={preds_noisy_10[i]}", fontsize=12)
+        ax2[i, 1].axis("off")
+
+        # --- Column 3: Noise 40% ---
+        ax2[i, 2].imshow(noisy_40_imgs[i], cmap="gray")
+        ax2[i, 2].set_title(f"Pred={preds_noisy_40[i]}", fontsize=12)
+        ax2[i, 2].axis("off")
+
+    fig2.suptitle(
+        f"Noise Results\nFlip Rate (10% Noise)={flip_10:.2f}% | Flip Rate (40% Noise)={flip_40:.2f}%",
+        fontsize=16
+    )
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    fig2.savefig("TC_CF_05_noise_results.png")
+    plt.close(fig2)
 
     # -----------------------------------------------------
     # Assertions
     # -----------------------------------------------------
-    assert remove_flip_rate < 20, (
-        f"High flip rate for removing 5 pixels: {remove_flip_rate:.2f}%"
+    assert flip_5 < 20, (
+        f"High flip rate for removing 5 pixels: {flip_5:.2f}%"
     )
-    assert noise_flip_rate < 20, (
-        f"High flip rate for {percent_noise}% noise: {noise_flip_rate:.2f}%"
+
+    assert flip_100 < 20, (
+        f"High flip rate for removing 100 pixels: {flip_100:.2f}%"
+    )
+
+    assert flip_10 < 20, (
+        f"High flip rate for 10% noise: {flip_10:.2f}%"
+    )
+
+    assert flip_40 < 20, (
+        f"High flip rate for 40% noise: {flip_40:.2f}%"
     )
 
 
