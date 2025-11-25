@@ -374,37 +374,26 @@ def test_tc_cf_04_blur():
     """
     model, device = get_trained_model_for_cf_tests()
 
-    # -------------------------
     # Load MNIST sample of "8"
-    # -------------------------
     orig_img, label = get_mnist_image(target_digit=8, target_index=0, show=False)
     assert label == 8, "Loaded MNIST image is not the digit '8'"
 
-    # -------------------------
     # Create a mask for the top loop
     # Approx region: upper half (rows 0–13)
-    # You can tune this later
-    # -------------------------
     mask = np.zeros_like(orig_img)
     mask[0:14, :] = 1.0
 
-    # -------------------------
-    # Apply Gaussian blur using your helper
-    # -------------------------
+    # Apply Gaussian blur
     blurred_full = blur_image(orig_img, sigma=1.0)
 
     # Blend so only the masked region is blurred
     perturbed_img = orig_img * (1 - mask) + blurred_full * mask
 
-    # -------------------------
     # Predictions
-    # -------------------------
     pred_before = predict_class(model, device, orig_img)
     pred_after = predict_class(model, device, perturbed_img)
 
-    # -------------------------
     # Visualization
-    # -------------------------
     fig, ax = plt.subplots(1, 2, figsize=(6, 3))
 
     ax[0].imshow(orig_img, cmap="gray")
@@ -419,18 +408,18 @@ def test_tc_cf_04_blur():
     fig.savefig("TC_CF_04_blur_before_after.png")
     plt.close(fig)
 
-    # -------------------------
     # Assertion: prediction should remain stable
-    # -------------------------
     assert pred_before == pred_after, (
         f"Localized blur caused prediction flip: "
         f"before={pred_before}, after={pred_after}"
     )
 
-
+# ----------------------------
+# TC-CF-05: Helper Functions
+# ----------------------------
 def get_random_non_salient_pixels(heatmap, num_pixels=5):
     """
-    Return indices of 'num_pixels' random non-salient pixels
+    TC-CF-05 Helper:s Return indices of 'num_pixels' random non-salient pixels
     based on the heatmap (low-value pixels = non-salient).
     """
     seed = 100
