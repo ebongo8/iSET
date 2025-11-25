@@ -332,7 +332,18 @@ if __name__ == "__main__":
     # find_index_for_label(label_input=9)
 
     # get_tc_cf_01_test_images()
-    img_array, label = get_mnist_image(target_digit=5, target_index=24, index=None, train_data_set=True, show=True)
+    # for i in range(10, 21):
+    #     img_array, label = get_mnist_image(target_digit=8, target_index=i, index=None, train_data_set=True, show=True)
+
+    img_array, label = get_mnist_image(target_digit=8, target_index=13, index=None, train_data_set=True, show=True)
+
+    # for digit in range(0, 10):
+    #     orig_img, _ = get_mnist_image(target_digit=digit, target_index=0, show=True)
+    #     dark_img = adjust_brightness(orig_img, factor=0.1)
+    #     plt.imshow(dark_img, cmap="gray")
+    #     plt.title("Darker")
+    #     plt.axis("off")
+    #     plt.show()
 
     # device_type = get_device_type(windows_os=False)
     # device = torch.device(device_type)
