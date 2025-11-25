@@ -487,7 +487,7 @@ def test_tc_cf_05_noise():
     TC-CF-05 Noise & Pixel Removal Robustness:
     For digits 0–9:
         • Remove 5 low-saliency pixels
-        • Remove 100 low-saliency pixels
+        • Remove 150 low-saliency pixels
         • Add 10% Gaussian noise
         • Add 40% Gaussian noise
     Produces two output figures:
@@ -497,18 +497,18 @@ def test_tc_cf_05_noise():
     model, device = get_trained_model_for_cf_tests()
 
     remove_5_results = []
-    remove_100_results = []
+    remove_150_results = []
     noise_10_results = []
     noise_40_results = []
 
     originals = []
     removed_5_imgs = []
-    removed_100_imgs = []
+    removed_150_imgs = []
     noisy_10_imgs = []
     noisy_40_imgs = []
 
     preds_removed_5 = []
-    preds_removed_100 = []
+    preds_removed_150 = []
     preds_noisy_10 = []
     preds_noisy_40 = []
 
@@ -573,16 +573,16 @@ def test_tc_cf_05_noise():
         remove_5_results.append((digit, orig_img, label, img_removed_5, pred_removed_5))
 
         # =================================================
-        # REMOVE 100 PIXELS
+        # REMOVE 150 PIXELS
         # =================================================
-        img_removed_100 = remove_non_salient_pixels(orig_img, heatmap_t, 150)
-        pred_removed_100 = predict_class(model, device, img_removed_100)
+        img_removed_150 = remove_non_salient_pixels(orig_img, heatmap_t, 150)
+        pred_removed_150 = predict_class(model, device, img_removed_150)
 
-        removed_100_imgs.append(img_removed_100)
-        preds_removed_100.append(pred_removed_100)
+        removed_150_imgs.append(img_removed_150)
+        preds_removed_150.append(pred_removed_150)
 
-        remove_100_results.append(
-            (digit, orig_img, label, img_removed_100, pred_removed_100)
+        remove_150_results.append(
+            (digit, orig_img, label, img_removed_150, pred_removed_150)
         )
 
         # =================================================
@@ -615,13 +615,13 @@ def test_tc_cf_05_noise():
     # Flip rates
     # -----------------------------------------------------
     flip_5 = compute_flip_rate(remove_5_results)
-    flip_100 = compute_flip_rate(remove_100_results)
+    flip_150 = compute_flip_rate(remove_150_results)
     flip_10 = compute_flip_rate(noise_10_results)
     flip_40 = compute_flip_rate(noise_40_results)
 
     print("\nTC-CF-05 RESULTS:")
     print(f"Flip rate (5px removed):   {flip_5:.2f}%")
-    print(f"Flip rate (100px removed): {flip_100:.2f}%")
+    print(f"Flip rate (150px removed): {flip_150:.2f}%")
     print(f"Flip rate (10% noise):     {flip_10:.2f}%")
     print(f"Flip rate (40% noise):     {flip_40:.2f}%")
 
@@ -641,13 +641,13 @@ def test_tc_cf_05_noise():
         ax1[i, 1].set_title(f"Pred={preds_removed_5[i]}", fontsize=12)
         ax1[i, 1].axis("off")
 
-        # --- Column 3: Remove 100 ---
-        ax1[i, 2].imshow(removed_100_imgs[i], cmap="gray")
-        ax1[i, 2].set_title(f"Pred={preds_removed_100[i]}", fontsize=12)
+        # --- Column 3: Remove 150 ---
+        ax1[i, 2].imshow(removed_150_imgs[i], cmap="gray")
+        ax1[i, 2].set_title(f"Pred={preds_removed_150[i]}", fontsize=12)
         ax1[i, 2].axis("off")
 
     fig1.suptitle(
-        f"Pixel Removal Results\nFlip Rate (5px)={flip_5:.2f}% | Flip Rate (100px)={flip_100:.2f}%",
+        f"Pixel Removal Results\nFlip Rate (5px)={flip_5:.2f}% | Flip Rate (150px)={flip_150:.2f}%",
         fontsize=16
     )
     plt.tight_layout(rect=[0, 0, 1, 0.96])
@@ -690,8 +690,8 @@ def test_tc_cf_05_noise():
         f"High flip rate for removing 5 pixels: {flip_5:.2f}%"
     )
 
-    assert flip_100 < 20, (
-        f"High flip rate for removing 100 pixels: {flip_100:.2f}%"
+    assert flip_150 < 20, (
+        f"High flip rate for removing 150 pixels: {flip_150:.2f}%"
     )
 
     assert flip_10 < 20, (
