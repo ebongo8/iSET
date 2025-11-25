@@ -318,6 +318,7 @@ def save_visualization(before_img, after_img, filename, pred_before=None, pred_a
     plt.savefig(filename)
     plt.close()
 
+
 # ----------------------------
 # TC-CF-03: Brighten & Strokes
 # ----------------------------
@@ -473,7 +474,7 @@ def test_tc_cf_04_blur():
     ax[1].axis("off")
 
     plt.tight_layout()
-    fig.savefig("TC_CF_04_blur_before_after.png")
+    fig.savefig("TC-CF-04_blur_before_after.png")
     plt.close(fig)
 
     # Assertion: prediction should remain stable
@@ -481,6 +482,7 @@ def test_tc_cf_04_blur():
         f"Localized blur caused prediction flip: "
         f"before={pred_before}, after={pred_after}"
     )
+
 
 # ----------------------------
 # TC-CF-05: Helper Functions
@@ -708,7 +710,7 @@ def test_tc_cf_05_noise():
         fontsize=16
     )
     plt.tight_layout(rect=[0, 0, 1, 0.96])
-    fig1.savefig("TC_CF_05_pixel_removal.png")
+    fig1.savefig("TC-CF-05_pixel_removal.png")
     plt.close(fig1)
 
     # -----------------------------------------------------
@@ -737,7 +739,7 @@ def test_tc_cf_05_noise():
         fontsize=16
     )
     plt.tight_layout(rect=[0, 0, 1, 0.96])
-    fig2.savefig("TC_CF_05_noise_results.png")
+    fig2.savefig("TC-CF-05_noise_results.png")
     plt.close(fig2)
 
     # -----------------------------------------------------
