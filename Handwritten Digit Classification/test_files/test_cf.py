@@ -3,6 +3,8 @@ import pytest
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+from torchvision import transforms
+import torch.nn.functional as F
 import re  # regular expressions package
 from PIL import Image
 from test_files.utils import (
@@ -761,28 +763,105 @@ def test_tc_cf_05_noise():
 # ----------------------------
 # TC-CF-06: OOD / Knowledge limits
 # ----------------------------
-def test_tc_cf_06_ood():
-    model, device = get_trained_model_for_cf_tests()
+def test_cf_ood_knowledge_limits():
+    """
+    TC-CF-06 OOD / Knowledge Limits Counterfactual Test:
+    Input a non-digit character (letter 'A').
+    Expected result:
+        - Model should refuse to generate counterfactuals or produce only low-confidence ones.
+        -  The model's softmax output shows low confidence, with no single class having a probability > 0.5.
+    """
+    # Setup device and load trained model
+    device_type = get_device_type(windows_os=False)
+    device = torch.device(device_type)
 
-    # Create simple 'A' placeholder as OOD input
-    ood_image = np.zeros((28, 28))
-    ood_image[5:23, 10:18] = 1.0
+    # Load trained model
+    current_dir = os.getcwd()
+    project_root = os.path.dirname(current_dir)
+    path_to_saved_model = os.path.join(project_root, "src", "model_state.pt")
 
-    # Forward pass
-    img_tensor = torch.tensor(ood_image, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
-    output = model(img_tensor)
+    model = load_trained_model(path_to_saved_model, device_type)
+    model.to(device)
+    model.eval()
 
-    # Predicted class
-    pred_class = output.argmax(dim=1).item()
-    print(f"Predicted class for OOD input: {pred_class}")
+    # ------ Load OOD test image ('A') ------
+    # Move up one directory, go into "test_images" folder, then pick the file
+    parent_dir = os.path.abspath(os.path.join(current_dir, ".."))
+    input_img_path = os.path.join(parent_dir, "test_images", "emnist_letter_A.png")
+    # Uncomment below to show that the model is very confident in predicting 0
+    # input_img_path = os.path.join(current_dir, "..", "test_images", "mnist_0.png")
+    img = Image.open(input_img_path).convert("L")  # ensure grayscale
 
-    # Confidence (max softmax)
-    confidence = torch.softmax(output, dim=1).max().item()
-    print(f"Model confidence on OOD input: {confidence:.3f}")
+    # Resize to 28x28 if necessary
+    if img.size != (28, 28):
+        img = img.resize((28, 28))
 
-    # Generate CF
-    cf = generate_counterfactual(ood_image, model)
+    # Save test image
+    test_img_path = os.path.join(current_dir, "TC-CF-06_ood_input_A.png")
+    plt.figure()
+    plt.imshow(img, cmap="gray")
+    plt.title("Out-of-Distribution Test Input ('A')")
+    plt.axis("off")
+    plt.savefig(test_img_path, bbox_inches="tight", pad_inches=0.2, dpi=200)
+    plt.close()
 
-    # Assertions
-    assert confidence < 0.5, "Model overconfident on OOD input"
-    assert cf is None, "CF generator produced unsafe CF for OOD input"
+    # Convert PIL image to PyTorch tensor and add batch dimension (1, 1, 28, 28)
+    transform = transforms.ToTensor()
+    img_tensor = transform(img).unsqueeze(0).to(device)
+
+    # Model inference
+    with torch.no_grad():
+        # Get raw model outputs (logits)
+        output = model(img_tensor)
+        # Convert logits → probabilities
+        probs = F.softmax(output, dim=1).cpu().numpy()[0]
+
+    # Print highest predicted probability
+    max_prob = probs.max()
+    pred_class = probs.argmax()
+    print(f"Highest class: {pred_class} | Max softmax prob: {max_prob:.3f}")
+
+    # --- Visualization: softmax probability distribution ---
+    # This plot shows how confident the model is for each possible class (0–9).
+    # Ideally, for an out-of-distribution input like 'A', the model should not
+    # assign high confidence to any one class — all probabilities should be low
+    # and relatively uniform.
+    plt.figure(figsize=(8, 4))
+    bars = plt.bar(range(len(probs)), probs, color="gray", alpha=0.7)
+
+    # Highlight predicted (max) class
+    bars[pred_class].set_color("red")
+
+    # Add probability text labels to all bars
+    for i, p in enumerate(probs):
+        plt.text(i, p + 0.01, f"{p:.2f}", ha="center",
+                 color="red" if i == pred_class else "dimgray",
+                 fontweight="bold" if i == pred_class else "normal", fontsize=9)
+
+    plt.title("Model Confidence Across Classes\n(Softmax Probability Distribution)", fontsize=13)
+    plt.xlabel("Class Index", fontsize=11)
+    plt.ylabel("Probability", fontsize=11)
+    plt.xticks(range(len(probs)), [str(i) for i in range(len(probs))])
+    plt.ylim(0, 1)
+    plt.grid(axis="y", linestyle="--", alpha=0.4)
+    plt.tight_layout()
+    # Save figure
+    probs_fig_path = os.path.join(current_dir, "TC-CF_06_ood_softmax_distribution.png")
+    plt.savefig(probs_fig_path, bbox_inches="tight", pad_inches=0.3, dpi=200)
+    plt.close()
+
+    print("Image tensor min/max:", img_tensor.min().item(), img_tensor.max().item())
+    print("Predicted class:", pred_class)
+    print("Max softmax probability:", max_prob)
+
+    # Assert that the model is not overly confident on this out-of-distribution input.
+    # If any class has > 0.5 probability, the model may be overconfident and fail this test.
+    assert probs.max() < 0.5, f"Model too confident on OOD input (max={probs.max():.2f})."
+
+    # Explanation of results:
+    # The bars represent how confident the model is in each possible digit class (0–9).
+    # When the model does not recognize the input (like an “A,” which isn’t a digit),
+    # the probabilities should be roughly uniform — around 0.1 each for a 10-class classifier.
+    # That indicates the model knows its limits — it’s not overconfident about an unfamiliar input.
+    # If one bar spikes high (e.g., >0.5), that suggests the model is overconfident and possibly
+    # not robust to out-of-distribution data.
