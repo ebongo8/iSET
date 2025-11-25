@@ -112,7 +112,6 @@ def test_tc_cf_01_shape_sensitivity():
 
         # Predict
         pred_label = predict_class(model, device, mod_img_arr)
-
         # Proximity delta (dict with L1 and L2)
         prox = compute_proximity_delta(orig_img_arr, mod_img_arr)
 
@@ -141,12 +140,16 @@ def test_tc_cf_01_shape_sensitivity():
         for res in results
     ])
 
+    # Count how many did not meet the proximity threshold
+    num_fail_prox = sum(1 for r in results if not r["pass_prox"])
+
     n = len(results)
     fig, axes = plt.subplots(nrows=n, ncols=2, figsize=(10, 3 * n))
 
     fig.suptitle(
         f"TC-CF-01 Shape Sensitivity — Original vs Modified\n"
-        f"Flip Rate = {flip_rate:.2f}%",
+        f"Flip Rate = {flip_rate:.2f}%\n"
+        f"{num_fail_prox}/{n} images > proximity delta threshold ({threshold})",
         fontsize=24,
         y=0.98
     )
@@ -266,6 +269,7 @@ def test_tc_cf_02_flip_image():
         f"Prediction changed after horizontal flip for {len(mismatches)} samples. "
         f"Examples (index, true, pred): {mismatches[:10]}"
     )
+
 
 # ----------------------------
 # TC-CF-03 Helper Function
