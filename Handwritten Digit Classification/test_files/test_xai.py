@@ -1,6 +1,7 @@
 import torch
 import pytest
 import os
+import re
 import numpy as np
 import matplotlib.pyplot as plt
 from captum.attr import Saliency, LayerGradCam
@@ -39,10 +40,19 @@ def compute_saliency(model, device, img_array, target_class):
     heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min() + 1e-8)
     return heatmap
 
+
 # --------------------------------
 # TC-XAI-01: Shape Sensitivity
 # --------------------------------
 def test_tc_xai_01_shape_sensitivity():
+    """
+    Corresponds to TC-CF-01 Shape sensitivity - saliency.
+     Visualize which pixels drive decision changes when loops/lines are perturbed. Determine
+     whether the model’s attention regions (saliency maps) align with the pixels
+      modified during geometric edits.
+    Expected result: Saliency maps highlight modified stroke regions;
+    Causal focus aligns with the manipulated feature.
+    """
     model, device = get_trained_model_for_xai_tests()
     # Use same images as TC-CF-01
     ORIG_DIR = "../test_images/CF_images/TC-CF-01_original"
@@ -84,10 +94,18 @@ def test_tc_xai_01_shape_sensitivity():
 
     assert all(results), "Some shape-perturbed images caused misclassification"
 
+
 # --------------------------------
 # TC-XAI-02: Brighten & Strokes
 # --------------------------------
 def test_tc_xai_02_brightness_strokes():
+    """
+    Corresponds to TC-CF-03 brighten and strokes - saliency
+     Analyze if saliency redistributes under lighting or stroke changes.
+
+    Expected result: Saliency should remain centered on digit-defining regions;
+     Minimal shift under brightness variation.
+    """
     model, device = get_trained_model_for_xai_tests()
     before_imgs, after_imgs = [], []
     heatmaps_before, heatmaps_after = [], []
@@ -114,10 +132,18 @@ def test_tc_xai_02_brightness_strokes():
         plt.savefig(f"TC-XAI-02_digit_{i}_saliency.png")
         plt.close(fig)
 
+
 # --------------------------------
 # TC-XAI-03: Blur
 # --------------------------------
 def test_tc_xai_03_blur():
+    """
+    Corresponds to TC-CF-04 noise - saliency
+     Examine model’s attribution map under noisy or pixel-removed inputs.
+     Test model’s ability to ignore non-salient noise while preserving focus on digit structure.
+
+    Expected result: Saliency should suppress non-salient noise and highlight digit structure.
+    """
     model, device = get_trained_model_for_xai_tests()
     orig_img, label = get_mnist_image(target_digit=8, target_index=0, show=False)
     blurred_img = blur_image(orig_img, sigma=1.0)
@@ -137,6 +163,7 @@ def test_tc_xai_03_blur():
     plt.close(fig)
 
     assert pred_orig == pred_blur, "Blur caused misclassification"
+
 
 # --------------------------------
 # TC-XAI-04: Noise
