@@ -212,7 +212,7 @@ def adjust_brightness(img, factor):
     return np.array(img_pil, dtype=np.float32) / 255.0
 
 
-def add_noise(img, amount=0.02):
+def add_noise(img, amount):
     """Add random Gaussian noise to the image, clipped to [0,1]."""
     noise = np.random.randn(*img.shape) * amount
     noisy_img = np.clip(img + noise, 0.0, 1.0)
