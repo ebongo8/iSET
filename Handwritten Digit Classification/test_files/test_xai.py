@@ -13,7 +13,8 @@ from test_files.utils import (
     adjust_brightness,
     add_noise,
     blur_image,
-    compute_flip_rate
+    compute_flip_rate,
+    create_saliency_and_gradcam_heatmaps
 )
 
 
@@ -67,30 +68,58 @@ def test_tc_xai_01_shape_sensitivity():
         if not prefix_match:
             continue
         prefix = prefix_match.group(1)
+
         mod_fname = next((f for f in mod_files if f.startswith(prefix)), None)
         if not mod_fname:
             continue
 
         orig_img = plt.imread(os.path.join(ORIG_DIR, orig_fname))
         mod_img = plt.imread(os.path.join(MOD_DIR, mod_fname))
-        true_label = int(re.search(r"mnist_(\d)", orig_fname).group(1))
-        pred_label = np.argmax(model(torch.tensor(mod_img, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)).detach().cpu().numpy())
 
-        # Compute saliency maps
-        sal_orig = compute_saliency(model, device, orig_img, true_label)
-        sal_mod = compute_saliency(model, device, mod_img, true_label)
+        digit_match = re.search(r"mnist_(\d)", orig_fname)
+        true_label = int(digit_match.group(1))
 
-        # Save side-by-side
-        fig, axes = plt.subplots(2, 2, figsize=(6,6))
-        axes[0,0].imshow(orig_img, cmap='gray'); axes[0,0].set_title('Original')
-        axes[0,1].imshow(sal_orig, cmap='hot'); axes[0,1].set_title('Saliency Original')
-        axes[1,0].imshow(mod_img, cmap='gray'); axes[1,0].set_title('Modified')
-        axes[1,1].imshow(sal_mod, cmap='hot'); axes[1,1].set_title('Saliency Modified')
+        img_tensor_orig = torch.tensor(orig_img, device=device, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+        img_tensor_mod = torch.tensor(mod_img, device=device, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+
+        pred_mod = torch.argmax(model(img_tensor_mod)).item()
+
+        # ---- Use helper for both saliency + GradCAM ----
+        sal_o, gc_o = create_saliency_and_gradcam_heatmaps(model, img_tensor_orig, true_label)
+        sal_m, gc_m = create_saliency_and_gradcam_heatmaps(model, img_tensor_mod, true_label)
+
+        # ---- Visualization ----
+        fig, axes = plt.subplots(2, 4, figsize=(10, 5))
+
+        # ----- ORIGINAL ROW -----
+        axes[0, 0].imshow(orig_img, cmap='gray')
+        axes[0, 0].set_title(f"Original (Label: {true_label})")
+
+        axes[0, 1].imshow(sal_o, cmap='hot')
+        axes[0, 1].set_title("Saliency Orig")
+
+        axes[0, 2].imshow(gc_o, cmap='hot')
+        axes[0, 2].set_title("GradCAM Orig")
+
+        axes[0, 3].axis('off')
+
+        # ----- MODIFIED ROW -----
+        axes[1, 0].imshow(mod_img, cmap='gray')
+        axes[1, 0].set_title(f"Modified (Pred: {pred_mod})")
+
+        axes[1, 1].imshow(sal_m, cmap='hot')
+        axes[1, 1].set_title("Saliency Mod")
+
+        axes[1, 2].imshow(gc_m, cmap='hot')
+        axes[1, 2].set_title("GradCAM Mod")
+
+        axes[1, 3].axis('off')
+
         plt.tight_layout()
-        plt.savefig(f"TC-XAI-01_{prefix}_saliency.png")
-        plt.close(fig)
+        plt.savefig(f"TC-XAI-01_{prefix}_heatmaps.png")
+        plt.close()
 
-        results.append(pred_label == true_label)
+        results.append(pred_mod == true_label)
 
     assert all(results), "Some shape-perturbed images caused misclassification"
 
