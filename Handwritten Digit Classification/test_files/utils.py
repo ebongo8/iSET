@@ -8,6 +8,7 @@ import pandas as pd
 import torch.nn.functional as F
 from PIL import Image, ImageFilter, ImageOps, ImageEnhance
 import matplotlib.pyplot as plt
+from captum.attr import Saliency, LayerGradCam
 import random
 
 
@@ -195,6 +196,39 @@ def get_emnist_image(csv_path):
     plt.imshow(rotated_img, cmap='gray')
     plt.axis('off')
     plt.show()
+
+
+def generate_heatmap(attr):
+    """Normalize attribution map to [0,1]"""
+    heatmap = attr.squeeze().abs().cpu().detach().numpy()
+    heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min())
+    return heatmap
+
+
+def find_last_conv_layer(model):
+    """Find last convolutional layer in model for Grad-CAM"""
+    last_conv = None
+    for layer in model.modules():
+        if isinstance(layer, torch.nn.Conv2d):
+            last_conv = layer
+    if last_conv is None:
+        raise ValueError("No Conv2d layer found in model for Grad-CAM.")
+    return last_conv
+
+
+def create_saliency_and_gradcam_heatmaps(model, img_tensor, target_class):
+    """Compute Saliency and Grad-CAM heatmaps"""
+    saliency = Saliency(model)
+    attr_saliency = saliency.attribute(img_tensor, target=target_class)
+    heatmap_saliency = generate_heatmap(attr_saliency)
+
+    last_conv = find_last_conv_layer(model)
+    gradcam = LayerGradCam(model, last_conv)
+    attr_gc = gradcam.attribute(img_tensor, target=target_class)
+    attr_gc = F.interpolate(attr_gc, size=(28,28), mode="bilinear", align_corners=False)
+    heatmap_gradcam = generate_heatmap(attr_gc)
+
+    return heatmap_saliency, heatmap_gradcam
 
 
 def flip_image(img):
