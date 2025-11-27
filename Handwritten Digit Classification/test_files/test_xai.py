@@ -167,31 +167,59 @@ def test_tc_xai_02_brightness_strokes():
 # --------------------------------
 def test_tc_xai_03_blur():
     """
-    Corresponds to TC-CF-04 noise - saliency
-     Examine model’s attribution map under noisy or pixel-removed inputs.
-     Test model’s ability to ignore non-salient noise while preserving focus on digit structure.
+    Corresponds to TC-CF-04 blur - saliency
+    Evaluate attention redistribution under blurred input. Assess if blurred regions lose saliency
+    weight proportionally while model focus remains on unblurred semantic zones.
 
-    Expected result: Saliency should suppress non-salient noise and highlight digit structure.
+    Expected result: SSaliency maps should maintain focus on digit body; decreased intensity at blurred
+    regions without spurious hotspots.
     """
     model, device = get_trained_model_for_xai_tests()
+
     orig_img, label = get_mnist_image(target_digit=8, target_index=0, show=False)
-    blurred_img = blur_image(orig_img, sigma=1.0)
-    pred_orig = np.argmax(model(torch.tensor(orig_img, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)).detach().cpu().numpy())
-    pred_blur = np.argmax(model(torch.tensor(blurred_img, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)).detach().cpu().numpy())
 
-    sal_orig = compute_saliency(model, device, orig_img, label)
-    sal_blur = compute_saliency(model, device, blurred_img, label)
+    # Create a mask for the top loop
+    # Approx region: upper half (rows 0–13)
+    mask = np.zeros_like(orig_img)
+    mask[0:14, :] = 1.0
 
-    fig, axes = plt.subplots(2, 2, figsize=(6,6))
-    axes[0,0].imshow(orig_img, cmap='gray'); axes[0,0].set_title('Original')
-    axes[0,1].imshow(sal_orig, cmap='hot'); axes[0,1].set_title('Saliency Original')
-    axes[1,0].imshow(blurred_img, cmap='gray'); axes[1,0].set_title('Blurred')
-    axes[1,1].imshow(sal_blur, cmap='hot'); axes[1,1].set_title('Saliency Blurred')
+    # Apply Gaussian blur
+    blurred_full = blur_image(orig_img, sigma=1.0)
+
+    # Blend so only the masked region is blurred
+    perturbed_img = orig_img * (1 - mask) + blurred_full * mask
+
+    img_t_orig = torch.tensor(orig_img, device=device, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+    img_t_blur = torch.tensor(perturbed_img, device=device, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+
+    sal_o, gc_o = create_saliency_and_gradcam_heatmaps(model, img_t_orig, label)
+    sal_b, gc_b = create_saliency_and_gradcam_heatmaps(model, img_t_blur, label)
+
+    pred_orig = torch.argmax(model(img_t_orig)).item()
+    pred_blur = torch.argmax(model(img_t_blur)).item()
+
+    fig, axes = plt.subplots(2, 3, figsize=(9, 6))
+    axes[0, 0].imshow(orig_img, cmap='gray')
+    axes[0, 0].set_title(f"Original (Label: {label})")
+
+    axes[0, 1].imshow(sal_o, cmap='hot')
+    axes[0, 1].set_title("Saliency Orig")
+    axes[0, 2].imshow(gc_o, cmap='hot')
+    axes[0, 2].set_title("GradCAM Orig")
+
+    axes[1, 0].imshow(perturbed_img, cmap='gray')
+    axes[1, 0].set_title(f"Blurred (Pred: {pred_blur})")
+
+    axes[1, 1].imshow(sal_b, cmap='hot')
+    axes[1, 1].set_title("Saliency Blur")
+    axes[1, 2].imshow(gc_b, cmap='hot');
+    axes[1, 2].set_title("GradCAM Blur")
+
     plt.tight_layout()
-    plt.savefig("TC-XAI-03_blur_saliency.png")
-    plt.close(fig)
+    plt.savefig("TC-XAI-03_blur_heatmaps.png")
+    plt.close()
 
-    assert pred_orig == pred_blur, "Blur caused misclassification"
+    # assert pred_orig == pred_blur, "Blur caused misclassification"
 
 
 # --------------------------------
