@@ -315,19 +315,28 @@ def test_tc_xai_04_noise():
         fig_n, ax = plt.subplots(3, 3, figsize=(9, 9))
 
         # Row 1 — ORIGINAL
-        ax[0, 0].imshow(orig_img, cmap='gray'); ax[0, 0].set_title("Original")
-        ax[0, 1].imshow(sal_o, cmap='hot'); ax[0, 1].set_title("Saliency Orig")
-        ax[0, 2].imshow(gc_o, cmap='hot'); ax[0, 2].set_title("GradCAM Orig")
+        ax[0, 0].imshow(orig_img, cmap='gray')
+        ax[0, 0].set_title("Original")
+        ax[0, 1].imshow(sal_o, cmap='hot')
+        ax[0, 1].set_title("Saliency Orig")
+        ax[0, 2].imshow(gc_o, cmap='hot')
+        ax[0, 2].set_title("GradCAM Orig")
 
         # Row 2 — 10% NOISE
-        ax[1, 0].imshow(noisy_10, cmap='gray'); ax[1, 0].set_title("10% Noise")
-        ax[1, 1].imshow(sal_n10, cmap='hot'); ax[1, 1].set_title("Saliency 10%")
-        ax[1, 2].imshow(gc_n10, cmap='hot'); ax[1, 2].set_title("GradCAM 10%")
+        ax[1, 0].imshow(noisy_10, cmap='gray')
+        ax[1, 0].set_title("10% Noise")
+        ax[1, 1].imshow(sal_n10, cmap='hot')
+        ax[1, 1].set_title("Saliency 10%")
+        ax[1, 2].imshow(gc_n10, cmap='hot')
+        ax[1, 2].set_title("GradCAM 10%")
 
         # Row 3 — 40% NOISE
-        ax[2, 0].imshow(noisy_40, cmap='gray'); ax[2, 0].set_title("40% Noise")
-        ax[2, 1].imshow(sal_n40, cmap='hot'); ax[2, 1].set_title("Saliency 40%")
-        ax[2, 2].imshow(gc_n40, cmap='hot'); ax[2, 2].set_title("GradCAM 40%")
+        ax[2, 0].imshow(noisy_40, cmap='gray')
+        ax[2, 0].set_title("40% Noise")
+        ax[2, 1].imshow(sal_n40, cmap='hot')
+        ax[2, 1].set_title("Saliency 40%")
+        ax[2, 2].imshow(gc_n40, cmap='hot')
+        ax[2, 2].set_title("GradCAM 40%")
 
         for r in range(3):
             for c in range(3):
@@ -344,19 +353,28 @@ def test_tc_xai_04_noise():
         fig_p, axp = plt.subplots(3, 3, figsize=(9, 9))
 
         # Row 1 — ORIGINAL
-        axp[0, 0].imshow(orig_img, cmap='gray'); axp[0, 0].set_title("Original")
-        axp[0, 1].imshow(sal_o, cmap='hot'); axp[0, 1].set_title("Saliency Orig")
-        axp[0, 2].imshow(gc_o, cmap='hot'); axp[0, 2].set_title("GradCAM Orig")
+        axp[0, 0].imshow(orig_img, cmap='gray')
+        axp[0, 0].set_title("Original")
+        axp[0, 1].imshow(sal_o, cmap='hot')
+        axp[0, 1].set_title("Saliency Orig")
+        axp[0, 2].imshow(gc_o, cmap='hot')
+        axp[0, 2].set_title("GradCAM Orig")
 
         # Row 2 — Remove 5
-        axp[1, 0].imshow(removed_5, cmap='gray'); axp[1, 0].set_title("Remove 5px")
-        axp[1, 1].imshow(sal_r5, cmap='hot'); axp[1, 1].set_title("Saliency 5px")
-        axp[1, 2].imshow(gc_r5, cmap='hot'); axp[1, 2].set_title("GradCAM 5px")
+        axp[1, 0].imshow(removed_5, cmap='gray')
+        axp[1, 0].set_title("Remove 5px")
+        axp[1, 1].imshow(sal_r5, cmap='hot')
+        axp[1, 1].set_title("Saliency 5px")
+        axp[1, 2].imshow(gc_r5, cmap='hot')
+        axp[1, 2].set_title("GradCAM 5px")
 
         # Row 3 — Remove 150
-        axp[2, 0].imshow(removed_150, cmap='gray'); axp[2, 0].set_title("Remove 150px")
-        axp[2, 1].imshow(sal_r150, cmap='hot'); axp[2, 1].set_title("Saliency 150px")
-        axp[2, 2].imshow(gc_r150, cmap='hot'); axp[2, 2].set_title("GradCAM 150px")
+        axp[2, 0].imshow(removed_150, cmap='gray')
+        axp[2, 0].set_title("Remove 150px")
+        axp[2, 1].imshow(sal_r150, cmap='hot')
+        axp[2, 1].set_title("Saliency 150px")
+        axp[2, 2].imshow(gc_r150, cmap='hot')
+        axp[2, 2].set_title("GradCAM 150px")
 
         for r in range(3):
             for c in range(3):
