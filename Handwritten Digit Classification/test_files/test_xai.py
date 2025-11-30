@@ -9,12 +9,11 @@ from test_files.utils import (
     get_device_type,
     load_trained_model,
     get_mnist_image,
-    flip_image,
     adjust_brightness,
-    add_noise,
     blur_image,
-    compute_flip_rate,
-    create_saliency_and_gradcam_heatmaps
+    create_saliency_and_gradcam_heatmaps,
+    remove_non_salient_pixels,
+    apply_gaussian_noise
 )
 
 
@@ -136,30 +135,35 @@ def test_tc_xai_02_brightness_strokes():
      Minimal shift under brightness variation.
     """
     model, device = get_trained_model_for_xai_tests()
-    before_imgs, after_imgs = [], []
-    heatmaps_before, heatmaps_after = [], []
 
     for digit in range(10):
         orig_img, _ = get_mnist_image(target_digit=digit, target_index=0, show=False)
         dark_img = adjust_brightness(orig_img, factor=0.9)
-        before_imgs.append(orig_img)
-        after_imgs.append(dark_img)
 
-        heatmaps_before.append(compute_saliency(model, device, orig_img, digit))
-        heatmaps_after.append(compute_saliency(model, device, dark_img, digit))
+        img_t_orig = torch.tensor(orig_img, device=device, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+        img_t_dark = torch.tensor(dark_img, device=device, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
 
-    # Save example saliency maps
-    for i in range(10):
-        fig, axes = plt.subplots(1, 2, figsize=(5,3))
-        axes[0].imshow(before_imgs[i], cmap='gray'); axes[0].imshow(heatmaps_before[i], cmap='hot', alpha=0.5)
-        axes[0].set_title(f'Digit {i} Original')
-        axes[0].axis('off')
-        axes[1].imshow(after_imgs[i], cmap='gray'); axes[1].imshow(heatmaps_after[i], cmap='hot', alpha=0.5)
-        axes[1].set_title(f'Digit {i} Darkened')
-        axes[1].axis('off')
+        sal_o, gc_o = create_saliency_and_gradcam_heatmaps(model, img_t_orig, digit)
+        sal_d, gc_d = create_saliency_and_gradcam_heatmaps(model, img_t_dark, digit)
+
+        fig, axes = plt.subplots(2, 3, figsize=(9, 5))
+        axes[0, 0].imshow(orig_img, cmap='gray')
+        axes[0, 0].set_title("Original")
+        axes[0, 1].imshow(sal_o, cmap='hot')
+        axes[0, 1].set_title("Saliency Orig")
+        axes[0, 2].imshow(gc_o, cmap='hot')
+        axes[0, 2].set_title("GradCAM Orig")
+
+        axes[1, 0].imshow(dark_img, cmap='gray')
+        axes[1, 0].set_title("Darkened")
+        axes[1, 1].imshow(sal_d, cmap='hot')
+        axes[1, 1].set_title("Saliency Dark")
+        axes[1, 2].imshow(gc_d, cmap='hot')
+        axes[1, 2].set_title("GradCAM Dark")
+
         plt.tight_layout()
-        plt.savefig(f"TC-XAI-02_digit_{i}_saliency.png")
-        plt.close(fig)
+        plt.savefig(f"TC-XAI-02_digit_{digit}_heatmaps.png")
+        plt.close()
 
 
 # --------------------------------
@@ -223,30 +227,142 @@ def test_tc_xai_03_blur():
 
 
 # --------------------------------
-# TC-XAI-04: Noise
+# TC-XAI-04: Noise + Pixel Removal (Saliency)
 # --------------------------------
 def test_tc_xai_04_noise():
+    """
+    XAI counterpart to TC-CF-05:
+    Generates two heatmap figures per digit:
+        1) Noise:   Original / 10% Noise / 40% Noise  (3x3)
+        2) Removal: Original / Remove 5px / Remove 150px (3x3)
+
+    Each row shows: Image | Saliency | GradCAM
+    """
+
     model, device = get_trained_model_for_xai_tests()
-    originals, noisy_imgs, heatmaps_orig, heatmaps_noisy = [], [], [], []
 
     for digit in range(10):
-        orig_img, _ = get_mnist_image(target_digit=digit, target_index=0, show=False)
-        noisy_img = add_noise(orig_img, amount=0.1)
-        originals.append(orig_img)
-        noisy_imgs.append(noisy_img)
 
-        heatmaps_orig.append(compute_saliency(model, device, orig_img, digit))
-        heatmaps_noisy.append(compute_saliency(model, device, noisy_img, digit))
+        # -----------------------------
+        # Load base MNIST image
+        # -----------------------------
+        orig_img, label = get_mnist_image(
+            target_digit=digit, target_index=0, show=False
+        )
+        assert label == digit
 
-    # Save visualization
-    for i in range(10):
-        fig, axes = plt.subplots(1,2,figsize=(5,3))
-        axes[0].imshow(originals[i], cmap='gray'); axes[0].imshow(heatmaps_orig[i], cmap='hot', alpha=0.5)
-        axes[0].set_title(f'Digit {i} Original')
-        axes[0].axis('off')
-        axes[1].imshow(noisy_imgs[i], cmap='gray'); axes[1].imshow(heatmaps_noisy[i], cmap='hot', alpha=0.5)
-        axes[1].set_title(f'Digit {i} Noisy')
-        axes[1].axis('off')
-        plt.tight_layout()
-        plt.savefig(f"TC-XAI-04_digit_{i}_noise_saliency.png")
-        plt.close(fig)
+        # Convert image to torch
+        img_t_o = torch.tensor(orig_img, dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0)
+
+        # ----------------------------------------------------------
+        # ORIGINAL saliency + GradCAM
+        # ----------------------------------------------------------
+        sal_o, gc_o = create_saliency_and_gradcam_heatmaps(model, img_t_o, digit)
+
+        # ----------------------------------------------------------
+        # GENERATE NOISY IMAGES (10% and 40%)
+        # ----------------------------------------------------------
+        noisy_10 = apply_gaussian_noise(orig_img, amount=0.10)
+        noisy_40 = apply_gaussian_noise(orig_img, amount=0.40)
+
+        img_t_n10 = torch.tensor(noisy_10, dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0)
+        img_t_n40 = torch.tensor(noisy_40, dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0)
+
+        sal_n10, gc_n10 = create_saliency_and_gradcam_heatmaps(model, img_t_n10, digit)
+        sal_n40, gc_n40 = create_saliency_and_gradcam_heatmaps(model, img_t_n40, digit)
+
+        # ----------------------------------------------------------
+        # FIND LAST CONV LAYER FOR GRADCAM (for removal saliency)
+        # ----------------------------------------------------------
+        last_conv_layer = None
+        for layer in model.modules():
+            if isinstance(layer, torch.nn.Conv2d):
+                last_conv_layer = layer
+        assert last_conv_layer is not None
+
+        gradcam = LayerGradCam(model, last_conv_layer)
+
+        # ----------------------------------------------------------
+        # Compute GradCAM heatmap for pixel ranking
+        # ----------------------------------------------------------
+        with torch.no_grad():
+            out = model(img_t_o)
+        pred_orig = out.argmax(1).item()
+
+        cam_attr = gradcam.attribute(img_t_o, target=pred_orig)
+        cam_attr = torch.nn.functional.interpolate(
+            cam_attr, size=(28, 28), mode="bilinear", align_corners=False
+        )
+        heatmap = cam_attr.squeeze().detach().cpu().numpy()
+        heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min() + 1e-8)
+        heatmap_t = torch.tensor(heatmap, dtype=torch.float32)
+
+        # ----------------------------------------------------------
+        # PIXEL REMOVAL: remove 5 and 150 least salient pixels
+        # ----------------------------------------------------------
+        removed_5 = remove_non_salient_pixels(orig_img, heatmap_t, 5)
+        removed_150 = remove_non_salient_pixels(orig_img, heatmap_t, 150)
+
+        img_t_r5 = torch.tensor(removed_5, dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0)
+        img_t_r150 = torch.tensor(removed_150, dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0)
+
+        sal_r5, gc_r5 = create_saliency_and_gradcam_heatmaps(model, img_t_r5, digit)
+        sal_r150, gc_r150 = create_saliency_and_gradcam_heatmaps(model, img_t_r150, digit)
+
+        # ==================================================================
+        #  FIGURE 1 — NOISE (3×3)
+        # ==================================================================
+        fig_n, ax = plt.subplots(3, 3, figsize=(9, 9))
+
+        # Row 1 — ORIGINAL
+        ax[0, 0].imshow(orig_img, cmap='gray'); ax[0, 0].set_title("Original")
+        ax[0, 1].imshow(sal_o, cmap='hot'); ax[0, 1].set_title("Saliency Orig")
+        ax[0, 2].imshow(gc_o, cmap='hot'); ax[0, 2].set_title("GradCAM Orig")
+
+        # Row 2 — 10% NOISE
+        ax[1, 0].imshow(noisy_10, cmap='gray'); ax[1, 0].set_title("10% Noise")
+        ax[1, 1].imshow(sal_n10, cmap='hot'); ax[1, 1].set_title("Saliency 10%")
+        ax[1, 2].imshow(gc_n10, cmap='hot'); ax[1, 2].set_title("GradCAM 10%")
+
+        # Row 3 — 40% NOISE
+        ax[2, 0].imshow(noisy_40, cmap='gray'); ax[2, 0].set_title("40% Noise")
+        ax[2, 1].imshow(sal_n40, cmap='hot'); ax[2, 1].set_title("Saliency 40%")
+        ax[2, 2].imshow(gc_n40, cmap='hot'); ax[2, 2].set_title("GradCAM 40%")
+
+        for r in range(3):
+            for c in range(3):
+                ax[r, c].axis("off")
+
+        fig_n.suptitle(f"TC-XAI-04 — Noise Heatmaps (Digit {digit})", fontsize=16)
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        fig_n.savefig(f"TC-XAI-04_digit_{digit}_noise_heatmaps.png")
+        plt.close(fig_n)
+
+        # ==================================================================
+        #  FIGURE 2 — PIXEL REMOVAL (3×3)
+        # ==================================================================
+        fig_p, axp = plt.subplots(3, 3, figsize=(9, 9))
+
+        # Row 1 — ORIGINAL
+        axp[0, 0].imshow(orig_img, cmap='gray'); axp[0, 0].set_title("Original")
+        axp[0, 1].imshow(sal_o, cmap='hot'); axp[0, 1].set_title("Saliency Orig")
+        axp[0, 2].imshow(gc_o, cmap='hot'); axp[0, 2].set_title("GradCAM Orig")
+
+        # Row 2 — Remove 5
+        axp[1, 0].imshow(removed_5, cmap='gray'); axp[1, 0].set_title("Remove 5px")
+        axp[1, 1].imshow(sal_r5, cmap='hot'); axp[1, 1].set_title("Saliency 5px")
+        axp[1, 2].imshow(gc_r5, cmap='hot'); axp[1, 2].set_title("GradCAM 5px")
+
+        # Row 3 — Remove 150
+        axp[2, 0].imshow(removed_150, cmap='gray'); axp[2, 0].set_title("Remove 150px")
+        axp[2, 1].imshow(sal_r150, cmap='hot'); axp[2, 1].set_title("Saliency 150px")
+        axp[2, 2].imshow(gc_r150, cmap='hot'); axp[2, 2].set_title("GradCAM 150px")
+
+        for r in range(3):
+            for c in range(3):
+                axp[r, c].axis("off")
+
+        fig_p.suptitle(f"TC-XAI-04 — Pixel Removal Heatmaps (Digit {digit})", fontsize=16)
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        fig_p.savefig(f"TC-XAI-04_digit_{digit}_pixelremoval_heatmaps.png")
+        plt.close(fig_p)

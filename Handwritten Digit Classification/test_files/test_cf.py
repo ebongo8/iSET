@@ -13,10 +13,11 @@ from test_files.utils import (
     get_mnist_image,
     flip_image,
     adjust_brightness,
-    add_noise,
     blur_image,
     compute_proximity_delta,
-    compute_flip_rate
+    compute_flip_rate,
+    remove_non_salient_pixels,
+    apply_gaussian_noise
 )
 from captum.attr import Saliency, LayerGradCam
 
@@ -482,60 +483,6 @@ def test_tc_cf_04_blur():
         f"Localized blur caused prediction flip: "
         f"before={pred_before}, after={pred_after}"
     )
-
-
-# ----------------------------
-# TC-CF-05: Helper Functions
-# ----------------------------
-def get_random_non_salient_pixels(heatmap, num_pixels=5):
-    """
-    TC-CF-05 Helper:s Return indices of 'num_pixels' random non-salient pixels
-    based on the heatmap (low-value pixels = non-salient).
-    """
-    seed = 100
-    torch.manual_seed(seed)  # Set seed for reproducibility
-
-    heatmap = heatmap.clone()
-
-    # Flatten heatmap
-    flat = heatmap.flatten()
-
-    # Sort ascending → lowest values = non-salient
-    sorted_indices = torch.argsort(flat, descending=False)
-
-    # Choose bottom 80% as non-salient
-    k_non_salient = int(0.8 * flat.numel())
-    non_salient_indices = sorted_indices[:k_non_salient]
-
-    # Randomly pick N from that pool
-    chosen = non_salient_indices[torch.randperm(k_non_salient)[:num_pixels]]
-
-    return chosen
-
-
-def remove_non_salient_pixels(orig_img, heatmap_t, n_pixels):
-    """
-    TC-CF-05 Helper: remove N non-salient pixels based on Grad-CAM heatmap
-    Remove N lowest-saliency pixels (set to 0).
-    Returns modified image.
-    """
-    idxs = get_random_non_salient_pixels(heatmap_t, num_pixels=n_pixels)
-
-    img_flat = orig_img.copy().flatten()
-    img_flat[idxs.numpy()] = 0.0
-
-    return img_flat.reshape(orig_img.shape)
-
-
-def apply_gaussian_noise(orig_img, amount):
-    """
-    TC-CF-05 Helper: apply Gaussian noise
-    Adds Gaussian noise scaled by `amount` (e.g., 0.10 for 10%).
-    """
-    np.random.seed(42)  # Set seed for reproducibility
-    noise = np.random.normal(0, amount, orig_img.shape)
-    noisy = orig_img + noise
-    return np.clip(noisy, 0, 1)
 
 
 # ----------------------------
