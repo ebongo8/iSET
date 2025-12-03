@@ -88,7 +88,7 @@ def test_tc_xai_01_shape_sensitivity():
         sal_m, gc_m = create_saliency_and_gradcam_heatmaps(model, img_tensor_mod, true_label)
 
         # ---- Visualization ----
-        fig, axes = plt.subplots(2, 4, figsize=(10, 5))
+        fig, axes = plt.subplots(2, 3, figsize=(10, 5))
 
         # ----- ORIGINAL ROW -----
         axes[0, 0].imshow(orig_img, cmap='gray')
@@ -100,8 +100,6 @@ def test_tc_xai_01_shape_sensitivity():
         axes[0, 2].imshow(gc_o, cmap='hot')
         axes[0, 2].set_title("GradCAM Orig")
 
-        axes[0, 3].axis('off')
-
         # ----- MODIFIED ROW -----
         axes[1, 0].imshow(mod_img, cmap='gray')
         axes[1, 0].set_title(f"Modified (Pred: {pred_mod})")
@@ -111,8 +109,6 @@ def test_tc_xai_01_shape_sensitivity():
 
         axes[1, 2].imshow(gc_m, cmap='hot')
         axes[1, 2].set_title("GradCAM Mod")
-
-        axes[1, 3].axis('off')
 
         plt.tight_layout()
         plt.savefig(f"TC-XAI-01_{prefix}_heatmaps.png")
