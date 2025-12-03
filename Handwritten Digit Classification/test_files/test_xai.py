@@ -179,9 +179,9 @@ def test_tc_xai_02_blur():
     # assert pred_orig == pred_blur, "Blur caused misclassification"
 
 
-# --------------------------------
+# -------------------------------------------
 # TC-XAI-03: Noise + Pixel Removal (Saliency)
-# --------------------------------
+# -------------------------------------------
 def test_tc_xai_03_noise():
     """
     XAI counterpart to TC-CF-04:
@@ -262,6 +262,14 @@ def test_tc_xai_03_noise():
         sal_r5, gc_r5 = create_saliency_and_gradcam_heatmaps(model, img_t_r5, digit)
         sal_r150, gc_r150 = create_saliency_and_gradcam_heatmaps(model, img_t_r150, digit)
 
+        # ----------------------------------------------------------
+        # PREDICTIONS for labeling
+        # ----------------------------------------------------------
+        pred_n10  = torch.argmax(model(img_t_n10)).item()
+        pred_n40  = torch.argmax(model(img_t_n40)).item()
+        pred_r5   = torch.argmax(model(img_t_r5)).item()
+        pred_r150 = torch.argmax(model(img_t_r150)).item()
+
         # ==================================================================
         #  FIGURE 1 — NOISE (3×3)
         # ==================================================================
@@ -269,23 +277,23 @@ def test_tc_xai_03_noise():
 
         # Row 1 — ORIGINAL
         ax[0, 0].imshow(orig_img, cmap='gray')
-        ax[0, 0].set_title("Original")
+        ax[0, 0].set_title(f"Original (Label: {digit})")
         ax[0, 1].imshow(sal_o, cmap='hot')
         ax[0, 1].set_title("Saliency Orig")
         ax[0, 2].imshow(gc_o, cmap='hot')
         ax[0, 2].set_title("GradCAM Orig")
 
-        # Row 2 — 10% NOISE
+        # Row 2 — 10% Noise
         ax[1, 0].imshow(noisy_10, cmap='gray')
-        ax[1, 0].set_title("10% Noise")
+        ax[1, 0].set_title(f"10% Noise (Pred: {pred_n10})")
         ax[1, 1].imshow(sal_n10, cmap='hot')
         ax[1, 1].set_title("Saliency 10%")
         ax[1, 2].imshow(gc_n10, cmap='hot')
         ax[1, 2].set_title("GradCAM 10%")
 
-        # Row 3 — 40% NOISE
+        # Row 3 — 40% Noise
         ax[2, 0].imshow(noisy_40, cmap='gray')
-        ax[2, 0].set_title("40% Noise")
+        ax[2, 0].set_title(f"40% Noise (Pred: {pred_n40})")
         ax[2, 1].imshow(sal_n40, cmap='hot')
         ax[2, 1].set_title("Saliency 40%")
         ax[2, 2].imshow(gc_n40, cmap='hot')
@@ -307,23 +315,23 @@ def test_tc_xai_03_noise():
 
         # Row 1 — ORIGINAL
         axp[0, 0].imshow(orig_img, cmap='gray')
-        axp[0, 0].set_title("Original")
+        axp[0, 0].set_title(f"Original (Label: {digit})")
         axp[0, 1].imshow(sal_o, cmap='hot')
         axp[0, 1].set_title("Saliency Orig")
         axp[0, 2].imshow(gc_o, cmap='hot')
         axp[0, 2].set_title("GradCAM Orig")
 
-        # Row 2 — Remove 5
+        # Row 2 — Remove 5px
         axp[1, 0].imshow(removed_5, cmap='gray')
-        axp[1, 0].set_title("Remove 5px")
+        axp[1, 0].set_title(f"Remove 5px (Pred: {pred_r5})")
         axp[1, 1].imshow(sal_r5, cmap='hot')
         axp[1, 1].set_title("Saliency 5px")
         axp[1, 2].imshow(gc_r5, cmap='hot')
         axp[1, 2].set_title("GradCAM 5px")
 
-        # Row 3 — Remove 150
+        # Row 3 — Remove 150px
         axp[2, 0].imshow(removed_150, cmap='gray')
-        axp[2, 0].set_title("Remove 150px")
+        axp[2, 0].set_title(f"Remove 150px (Pred: {pred_r150})")
         axp[2, 1].imshow(sal_r150, cmap='hot')
         axp[2, 1].set_title("Saliency 150px")
         axp[2, 2].imshow(gc_r150, cmap='hot')
