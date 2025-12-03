@@ -124,54 +124,11 @@ def test_tc_xai_01_shape_sensitivity():
 
 
 # --------------------------------
-# TC-XAI-02: Brighten & Strokes
+# TC-XAI-02: Blur
 # --------------------------------
-def test_tc_xai_02_brightness_strokes():
+def test_tc_xai_02_blur():
     """
-    Corresponds to TC-CF-03 brighten and strokes - saliency
-     Analyze if saliency redistributes under lighting or stroke changes.
-
-    Expected result: Saliency should remain centered on digit-defining regions;
-     Minimal shift under brightness variation.
-    """
-    model, device = get_trained_model_for_xai_tests()
-
-    for digit in range(10):
-        orig_img, _ = get_mnist_image(target_digit=digit, target_index=0, show=False)
-        dark_img = adjust_brightness(orig_img, factor=0.9)
-
-        img_t_orig = torch.tensor(orig_img, device=device, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-        img_t_dark = torch.tensor(dark_img, device=device, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-
-        sal_o, gc_o = create_saliency_and_gradcam_heatmaps(model, img_t_orig, digit)
-        sal_d, gc_d = create_saliency_and_gradcam_heatmaps(model, img_t_dark, digit)
-
-        fig, axes = plt.subplots(2, 3, figsize=(9, 5))
-        axes[0, 0].imshow(orig_img, cmap='gray')
-        axes[0, 0].set_title("Original")
-        axes[0, 1].imshow(sal_o, cmap='hot')
-        axes[0, 1].set_title("Saliency Orig")
-        axes[0, 2].imshow(gc_o, cmap='hot')
-        axes[0, 2].set_title("GradCAM Orig")
-
-        axes[1, 0].imshow(dark_img, cmap='gray')
-        axes[1, 0].set_title("Darkened")
-        axes[1, 1].imshow(sal_d, cmap='hot')
-        axes[1, 1].set_title("Saliency Dark")
-        axes[1, 2].imshow(gc_d, cmap='hot')
-        axes[1, 2].set_title("GradCAM Dark")
-
-        plt.tight_layout()
-        plt.savefig(f"TC-XAI-02_digit_{digit}_heatmaps.png")
-        plt.close()
-
-
-# --------------------------------
-# TC-XAI-03: Blur
-# --------------------------------
-def test_tc_xai_03_blur():
-    """
-    Corresponds to TC-CF-04 blur - saliency
+    Corresponds to TC-CF-03 blur - saliency
     Evaluate attention redistribution under blurred input. Assess if blurred regions lose saliency
     weight proportionally while model focus remains on unblurred semantic zones.
 
@@ -220,18 +177,18 @@ def test_tc_xai_03_blur():
     axes[1, 2].set_title("GradCAM Blur")
 
     plt.tight_layout()
-    plt.savefig("TC-XAI-03_blur_heatmaps.png")
+    plt.savefig("TC-XAI-02_blur_heatmaps.png")
     plt.close()
 
     # assert pred_orig == pred_blur, "Blur caused misclassification"
 
 
 # --------------------------------
-# TC-XAI-04: Noise + Pixel Removal (Saliency)
+# TC-XAI-03: Noise + Pixel Removal (Saliency)
 # --------------------------------
-def test_tc_xai_04_noise():
+def test_tc_xai_03_noise():
     """
-    XAI counterpart to TC-CF-05:
+    XAI counterpart to TC-CF-04:
     Generates two heatmap figures per digit:
         1) Noise:   Original / 10% Noise / 40% Noise  (3x3)
         2) Removal: Original / Remove 5px / Remove 150px (3x3)
@@ -342,9 +299,9 @@ def test_tc_xai_04_noise():
             for c in range(3):
                 ax[r, c].axis("off")
 
-        fig_n.suptitle(f"TC-XAI-04 — Noise Heatmaps (Digit {digit})", fontsize=16)
+        fig_n.suptitle(f"TC-XAI-03 — Noise Heatmaps (Digit {digit})", fontsize=16)
         plt.tight_layout(rect=[0, 0, 1, 0.95])
-        fig_n.savefig(f"TC-XAI-04_digit_{digit}_noise_heatmaps.png")
+        fig_n.savefig(f"TC-XAI-03_digit_{digit}_noise_heatmaps.png")
         plt.close(fig_n)
 
         # ==================================================================
@@ -380,7 +337,50 @@ def test_tc_xai_04_noise():
             for c in range(3):
                 axp[r, c].axis("off")
 
-        fig_p.suptitle(f"TC-XAI-04 — Pixel Removal Heatmaps (Digit {digit})", fontsize=16)
+        fig_p.suptitle(f"TC-XAI-03 — Pixel Removal Heatmaps (Digit {digit})", fontsize=16)
         plt.tight_layout(rect=[0, 0, 1, 0.95])
-        fig_p.savefig(f"TC-XAI-04_digit_{digit}_pixelremoval_heatmaps.png")
+        fig_p.savefig(f"TC-XAI-03_digit_{digit}_pixelremoval_heatmaps.png")
         plt.close(fig_p)
+
+
+'''
+# ---------------------------------------
+# FUTURE WORK XAI TEST Brighten & Strokes
+# ---------------------------------------
+def test_tc_xai_02_brightness_strokes():
+    """
+    Corresponds to TC-CF-03 brighten and strokes - saliency
+     Analyze if saliency redistributes under lighting or stroke changes.
+
+    Expected result: Saliency should remain centered on digit-defining regions;
+     Minimal shift under brightness variation.
+    """
+    model, device = get_trained_model_for_xai_tests()
+
+    for digit in range(10):
+        orig_img, _ = get_mnist_image(target_digit=digit, target_index=0, show=False)
+        dark_img = adjust_brightness(orig_img, factor=0.9)
+        img_t_orig = torch.tensor(orig_img, device=device, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+        img_t_dark = torch.tensor(dark_img, device=device, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+        sal_o, gc_o = create_saliency_and_gradcam_heatmaps(model, img_t_orig, digit)
+        sal_d, gc_d = create_saliency_and_gradcam_heatmaps(model, img_t_dark, digit)
+        
+        fig, axes = plt.subplots(2, 3, figsize=(9, 5))
+        axes[0, 0].imshow(orig_img, cmap='gray')
+        axes[0, 0].set_title("Original")
+        axes[0, 1].imshow(sal_o, cmap='hot')
+        axes[0, 1].set_title("Saliency Orig")
+        axes[0, 2].imshow(gc_o, cmap='hot')
+        axes[0, 2].set_title("GradCAM Orig")
+
+        axes[1, 0].imshow(dark_img, cmap='gray')
+        axes[1, 0].set_title("Darkened")
+        axes[1, 1].imshow(sal_d, cmap='hot')
+        axes[1, 1].set_title("Saliency Dark")
+        axes[1, 2].imshow(gc_d, cmap='hot')
+        axes[1, 2].set_title("GradCAM Dark")
+
+        plt.tight_layout()
+        plt.savefig(f"TC-XAI-02_digit_{digit}_heatmaps.png")
+        plt.close()
+'''

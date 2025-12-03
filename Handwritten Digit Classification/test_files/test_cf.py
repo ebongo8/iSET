@@ -275,169 +275,11 @@ def test_tc_cf_02_flip_image():
 
 
 # ----------------------------
-# TC-CF-03 Helper Function
-# ----------------------------
-def save_visualization(before_img, after_img, filename, pred_before=None, pred_after=None, title=None, multiple=False,
-                       before_imgs=None, after_imgs=None, titles=None):
-    """
-    TC-CF-03 helper to save before/after comparisons.
-
-    Save MNIST visualizations.
-
-    If multiple=True, before_imgs and after_imgs should be lists of images (for Case 2 & 3).
-    Otherwise, before_img and after_img are single images (for Case 1).
-    """
-    if multiple:
-        n_rows = len(before_imgs)
-        n_cols = 2
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(n_cols * 2.5, n_rows * 2.5))
-
-        if n_rows == 1:
-            axes = np.array([axes])  # make iterable
-        if n_cols == 1:
-            axes = axes.reshape(-1, 1)
-
-        for i in range(n_rows):
-            axes[i, 0].imshow(before_imgs[i], cmap='gray')
-            axes[i, 0].axis('off')
-            axes[i, 0].set_title('Before' if titles is None else titles[i][0], fontsize=8)
-
-            axes[i, 1].imshow(after_imgs[i], cmap='gray')
-            axes[i, 1].axis('off')
-            axes[i, 1].set_title('After' if titles is None else titles[i][1], fontsize=8)
-    else:
-        fig, axes = plt.subplots(1, 2, figsize=(5, 2.5))
-        axes[0].imshow(before_img, cmap='gray')
-        axes[0].axis('off')
-        axes[0].set_title('Before' if pred_before is None else f"{pred_before} (Before)")
-
-        axes[1].imshow(after_img, cmap='gray')
-        axes[1].axis('off')
-        axes[1].set_title('After' if pred_after is None else f"{pred_after} (After)")
-
-    plt.tight_layout()
-    plt.savefig(filename)
-    plt.close()
-
-
-# ----------------------------
-# TC-CF-03: Brighten & Strokes
-# ----------------------------
-def test_tc_cf_03_brightness_strokes():
-    model, device = get_trained_model_for_cf_tests()
-
-    # ============================================================
-    # (1) STROKE THICKENING — CASE 1
-    # ============================================================
-    cf_test_images_dir = "../test_images/CF_images"
-    orig_5_png = os.path.join(cf_test_images_dir, "mnist_5_24.png")
-    thickened_5_png = os.path.join(cf_test_images_dir, "thicken_stroke_5.png")
-
-    orig_5_arr = load_image(orig_5_png)
-    thickened_5_arr = load_image(thickened_5_png)
-
-    pred_orig_5 = predict_class(model, device, orig_5_arr)
-    pred_thick_5 = predict_class(model, device, thickened_5_arr)
-
-    save_visualization(
-        before_img=orig_5_arr,
-        after_img=thickened_5_arr,
-        pred_before=pred_orig_5,
-        pred_after=pred_thick_5,
-        filename="TC-CF-03_case1_stroke_thickening.png",
-        title="TC-CF-03 Case 1: Stroke Thickening",
-        multiple=False
-    )
-
-    results = [(0, orig_5_png, 5, thickened_5_arr, pred_thick_5)]
-    flip_rate_strokes = compute_flip_rate(results)
-    assert flip_rate_strokes == 0, (
-        f"Stroke thickening changed prediction! Flip Rate = {flip_rate_strokes:.1f}%"
-    )
-
-    # ============================================================
-    # (2) DARKEN STROKES BY 10% — CASE 2
-    # ============================================================
-    before_imgs, after_imgs, titles_list = [], [], []
-    flip_results_darken = []
-
-    for digit in range(10):
-        orig_img, _ = get_mnist_image(target_digit=digit, target_index=0, show=False)
-        dark_img = adjust_brightness(orig_img, factor=0.9)
-
-        pred_orig = predict_class(model, device, orig_img)
-        pred_dark = predict_class(model, device, dark_img)
-
-        before_imgs.append(orig_img)
-        after_imgs.append(dark_img)
-        titles_list.append([f"Digit {digit} Original", f"Digit {digit} Darkened"])
-
-        flip_results_darken.append((digit, None, digit, dark_img, pred_dark))
-
-    save_visualization(
-        before_img=None,
-        after_img=None,
-        filename="TC-CF-03_case2_darken.png",
-        multiple=True,
-        before_imgs=before_imgs,
-        after_imgs=after_imgs,
-        titles=titles_list
-    )
-
-    flip_rate_darken = compute_flip_rate(flip_results_darken)
-    assert flip_rate_darken < 5, (
-        f"[Darken 10%] Flip rate too high: {flip_rate_darken:.2f}%"
-    )
-
-    # ============================================================
-    # (3) BRIGHTEN BACKGROUND — CASE 3
-    # ============================================================
-    before_imgs, after_imgs, titles_list = [], [], []
-    flip_results_bright = []
-
-    for digit in range(10):
-        orig_img, _ = get_mnist_image(target_digit=digit, target_index=0, show=False)
-        bright_img = adjust_brightness(orig_img, factor=1.1)
-
-        pred_orig = predict_class(model, device, orig_img)
-        pred_bright = predict_class(model, device, bright_img)
-
-        before_imgs.append(orig_img)
-        after_imgs.append(bright_img)
-        titles_list.append([f"Digit {digit} Original", f"Digit {digit} Brightened"])
-
-        flip_results_bright.append((digit, None, digit, bright_img, pred_bright))
-
-    save_visualization(
-        before_img=None,
-        after_img=None,
-        filename="TC-CF-03_case3_brighten.png",
-        multiple=True,
-        before_imgs=before_imgs,
-        after_imgs=after_imgs,
-        titles=titles_list
-    )
-
-    flip_rate_bright = compute_flip_rate(flip_results_bright)
-    assert flip_rate_bright < 5, (
-        f"[Brighten BG] Flip rate too high: {flip_rate_bright:.2f}%"
-    )
-
-    # ============================================================
-    # SUMMARY PRINT
-    # ============================================================
-    print("\n=== TC-CF-03 Summary ===")
-    print(f"Flip Rate (Stroke Thickening): {flip_rate_strokes:.2f}%")
-    print(f"Flip Rate (Darken 10%): {flip_rate_darken:.2f}%")
-    print(f"Flip Rate (Brighten BG): {flip_rate_bright:.2f}%")
-
-
-# ----------------------------
-# TC-CF-04: Blur
+# TC-CF-03: Blur
 # ----------------------------
 def test_tc_cf_04_blur():
     """
-    TC-CF-04 Blur Stability:
+    TC-CF-03 Blur Stability:
     Apply mild Gaussian blur only to the upper loop of digit '8' to test
     localized perceptual degradation. Verify prediction stability and save
     a visualization of before/after images with predicted labels.
@@ -475,7 +317,7 @@ def test_tc_cf_04_blur():
     ax[1].axis("off")
 
     plt.tight_layout()
-    fig.savefig("TC-CF-04_blur_before_after.png")
+    fig.savefig("TC-CF-03_blur_before_after.png")
     plt.close(fig)
 
     # Assertion: prediction should remain stable
@@ -486,11 +328,11 @@ def test_tc_cf_04_blur():
 
 
 # ----------------------------
-# TC-CF-05: Noise
+# TC-CF-04: Noise
 # ----------------------------
-def test_tc_cf_05_noise():
+def test_tc_cf_04_noise():
     """
-    TC-CF-05 Noise & Pixel Removal Robustness:
+    TC-CF-04 Noise & Pixel Removal Robustness:
     For digits 0–9:
         • Remove 5 low-saliency pixels
         • Remove 150 low-saliency pixels
@@ -625,7 +467,7 @@ def test_tc_cf_05_noise():
     flip_10 = compute_flip_rate(noise_10_results)
     flip_40 = compute_flip_rate(noise_40_results)
 
-    print("\nTC-CF-05 RESULTS:")
+    print("\nTC-CF-04 RESULTS:")
     print(f"Flip rate (5px removed):   {flip_5:.2f}%")
     print(f"Flip rate (150px removed): {flip_150:.2f}%")
     print(f"Flip rate (10% noise):     {flip_10:.2f}%")
@@ -657,7 +499,7 @@ def test_tc_cf_05_noise():
         fontsize=16
     )
     plt.tight_layout(rect=[0, 0, 1, 0.96])
-    fig1.savefig("TC-CF-05_pixel_removal.png")
+    fig1.savefig("TC-CF-04_pixel_removal.png")
     plt.close(fig1)
 
     # -----------------------------------------------------
@@ -686,7 +528,7 @@ def test_tc_cf_05_noise():
         fontsize=16
     )
     plt.tight_layout(rect=[0, 0, 1, 0.96])
-    fig2.savefig("TC-CF-05_noise_results.png")
+    fig2.savefig("TC-CF-04_noise_results.png")
     plt.close(fig2)
 
     # -----------------------------------------------------
@@ -710,11 +552,11 @@ def test_tc_cf_05_noise():
 
 
 # ----------------------------
-# TC-CF-06: OOD / Knowledge limits
+# TC-CF-05: OOD / Knowledge limits
 # ----------------------------
 def test_cf_ood_knowledge_limits():
     """
-    TC-CF-06 OOD / Knowledge Limits Counterfactual Test:
+    TC-CF-05 OOD / Knowledge Limits Counterfactual Test:
     Input a non-digit character (letter 'A').
     Expected result:
         - Model should refuse to generate counterfactuals or produce only low-confidence ones.
@@ -746,7 +588,7 @@ def test_cf_ood_knowledge_limits():
         img = img.resize((28, 28))
 
     # Save test image
-    test_img_path = os.path.join(current_dir, "TC-CF-06_ood_input_A.png")
+    test_img_path = os.path.join(current_dir, "TC-CF-05_ood_input_A.png")
     plt.figure()
     plt.imshow(img, cmap="gray")
     plt.title("Out-of-Distribution Test Input ('A')")
@@ -814,3 +656,145 @@ def test_cf_ood_knowledge_limits():
     # That indicates the model knows its limits — it’s not overconfident about an unfamiliar input.
     # If one bar spikes high (e.g., >0.5), that suggests the model is overconfident and possibly
     # not robust to out-of-distribution data.
+
+
+'''
+# ----------------------------------------
+#  FUTURE WORK CF TEST: Brighten & Strokes 
+# ----------------------------------------
+def test_tc_cf_03_brightness_strokes():
+    model, device = get_trained_model_for_cf_tests()
+    # ============================================================
+    # (1) STROKE THICKENING — CASE 1
+    # ============================================================
+    cf_test_images_dir = "../test_images/CF_images"
+    orig_5_png = os.path.join(cf_test_images_dir, "mnist_5_24.png")
+    thickened_5_png = os.path.join(cf_test_images_dir, "thicken_stroke_5.png")
+    orig_5_arr = load_image(orig_5_png)
+    thickened_5_arr = load_image(thickened_5_png)
+
+    pred_orig_5 = predict_class(model, device, orig_5_arr)
+    pred_thick_5 = predict_class(model, device, thickened_5_arr)
+    save_visualization(
+        before_img=orig_5_arr,
+        after_img=thickened_5_arr,
+        pred_before=pred_orig_5,
+        pred_after=pred_thick_5,
+        filename="TC-CF-03_case1_stroke_thickening.png",
+        title="TC-CF-03 Case 1: Stroke Thickening",
+        multiple=False
+    )
+    results = [(0, orig_5_png, 5, thickened_5_arr, pred_thick_5)]
+    flip_rate_strokes = compute_flip_rate(results)
+    assert flip_rate_strokes == 0, (
+        f"Stroke thickening changed prediction! Flip Rate = {flip_rate_strokes:.1f}%"
+    )
+    # ============================================================
+    # (2) DARKEN STROKES BY 10% — CASE 2
+    # ============================================================
+    before_imgs, after_imgs, titles_list = [], [], []
+    flip_results_darken = []
+    for digit in range(10):
+        orig_img, _ = get_mnist_image(target_digit=digit, target_index=0, show=False)
+        dark_img = adjust_brightness(orig_img, factor=0.9)
+        pred_orig = predict_class(model, device, orig_img)
+        pred_dark = predict_class(model, device, dark_img)
+        before_imgs.append(orig_img)
+        after_imgs.append(dark_img)
+        titles_list.append([f"Digit {digit} Original", f"Digit {digit} Darkened"])
+        flip_results_darken.append((digit, None, digit, dark_img, pred_dark))
+
+    save_visualization(
+        before_img=None,
+        after_img=None,
+        filename="TC-CF-03_case2_darken.png",
+        multiple=True,
+        before_imgs=before_imgs,
+        after_imgs=after_imgs,
+        titles=titles_list
+    )
+    flip_rate_darken = compute_flip_rate(flip_results_darken)
+    assert flip_rate_darken < 5, (
+        f"[Darken 10%] Flip rate too high: {flip_rate_darken:.2f}%"
+    )
+    # ============================================================
+    # (3) BRIGHTEN BACKGROUND — CASE 3
+    # ============================================================
+    before_imgs, after_imgs, titles_list = [], [], []
+    flip_results_bright = []
+    for digit in range(10):
+        orig_img, _ = get_mnist_image(target_digit=digit, target_index=0, show=False)
+        bright_img = adjust_brightness(orig_img, factor=1.1)
+        pred_orig = predict_class(model, device, orig_img)
+        pred_bright = predict_class(model, device, bright_img)
+        before_imgs.append(orig_img)
+        after_imgs.append(bright_img)
+        titles_list.append([f"Digit {digit} Original", f"Digit {digit} Brightened"])
+        flip_results_bright.append((digit, None, digit, bright_img, pred_bright))
+
+    save_visualization(
+        before_img=None,
+        after_img=None,
+        filename="TC-CF-03_case3_brighten.png",
+        multiple=True,
+        before_imgs=before_imgs,
+        after_imgs=after_imgs,
+        titles=titles_list
+    )
+    flip_rate_bright = compute_flip_rate(flip_results_bright)
+    assert flip_rate_bright < 5, (
+        f"[Brighten BG] Flip rate too high: {flip_rate_bright:.2f}%"
+    )
+    # ============================================================
+    # SUMMARY PRINT
+    # ============================================================
+    print("\n=== TC-CF-03 Summary ===")
+    print(f"Flip Rate (Stroke Thickening): {flip_rate_strokes:.2f}%")
+    print(f"Flip Rate (Darken 10%): {flip_rate_darken:.2f}%")
+    print(f"Flip Rate (Brighten BG): {flip_rate_bright:.2f}%")
+
+# -------------------------------------------
+# Brighten & Strokes Test Helper Function
+# -------------------------------------------
+def save_visualization(before_img, after_img, filename, pred_before=None, pred_after=None, title=None, multiple=False,
+                       before_imgs=None, after_imgs=None, titles=None):
+    """
+    TC-CF-03 helper to save before/after comparisons.
+
+    Save MNIST visualizations.
+
+    If multiple=True, before_imgs and after_imgs should be lists of images (for Case 2 & 3).
+    Otherwise, before_img and after_img are single images (for Case 1).
+    """
+    if multiple:
+        n_rows = len(before_imgs)
+        n_cols = 2
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(n_cols * 2.5, n_rows * 2.5))
+
+        if n_rows == 1:
+            axes = np.array([axes])  # make iterable
+        if n_cols == 1:
+            axes = axes.reshape(-1, 1)
+
+        for i in range(n_rows):
+            axes[i, 0].imshow(before_imgs[i], cmap='gray')
+            axes[i, 0].axis('off')
+            axes[i, 0].set_title('Before' if titles is None else titles[i][0], fontsize=8)
+
+            axes[i, 1].imshow(after_imgs[i], cmap='gray')
+            axes[i, 1].axis('off')
+            axes[i, 1].set_title('After' if titles is None else titles[i][1], fontsize=8)
+    else:
+        fig, axes = plt.subplots(1, 2, figsize=(5, 2.5))
+        axes[0].imshow(before_img, cmap='gray')
+        axes[0].axis('off')
+        axes[0].set_title('Before' if pred_before is None else f"{pred_before} (Before)")
+
+        axes[1].imshow(after_img, cmap='gray')
+        axes[1].axis('off')
+        axes[1].set_title('After' if pred_after is None else f"{pred_after} (After)")
+
+    plt.tight_layout()
+    plt.savefig(filename)
+    plt.close()
+'''
