@@ -637,7 +637,7 @@ def test_cf_ood_knowledge_limits():
     plt.grid(axis="y", linestyle="--", alpha=0.4)
     plt.tight_layout()
     # Save figure
-    probs_fig_path = os.path.join(current_dir, "TC-CF_06_ood_softmax_distribution.png")
+    probs_fig_path = os.path.join(current_dir, "TC-CF_05_ood_softmax_distribution.png")
     plt.savefig(probs_fig_path, bbox_inches="tight", pad_inches=0.3, dpi=200)
     plt.close()
 
