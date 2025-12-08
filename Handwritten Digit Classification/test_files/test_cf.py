@@ -180,7 +180,7 @@ def test_tc_cf_01_shape_sensitivity():
         ax_mod.set_title(
             f"Predicted: {res['pred']} ({status_pred})\n"
             # f"L1 Δ={res['prox']['L1']:.4f}, L2 Δ={res['prox']['L2']:.4f} ({status_prox})"
-            f"L1 Δ={res['prox']['L1']:.4f} ({status_prox})",
+            f"L1 Δ={res['prox']['L1']:.2f} ({status_prox})",
             fontsize=18
         )
         ax_mod.axis("off")

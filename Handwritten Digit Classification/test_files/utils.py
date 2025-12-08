@@ -355,8 +355,8 @@ def compute_proximity_delta(orig_img, pert_img):
             "L2": float, root mean squared pixel difference
     """
     diff = orig_img - pert_img
-    l1 = float(np.mean(np.abs(diff)))
-    l2 = float(np.sqrt(np.mean(diff ** 2)))
+    l1 = round(float(np.mean(np.abs(diff))), 2)
+    l2 = round(float(np.sqrt(np.mean(diff ** 2))), 2)
 
     return {"L1": l1, "L2": l2}
 
