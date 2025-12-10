@@ -21,7 +21,6 @@ The code has been modularized for clarity and testing:
 src/
 ├── classifier_model.py      # ImageClassifier class
 ├── train_model.py           # Trains and saves model
-├── utils.py                 # Helper functions used across tests
 test_files/
 ├── test_unit.py             # Unit test functions
 ├── test_integration.py      # Integration test functions
@@ -29,8 +28,9 @@ test_files/
 ├── test_uat.py              # User acceptance test functions
 ├── test_cf.py               # Counterfactual reasoning test functions
 ├── test_xai.py              # XAI test functions
-├── test_images/             # Images used in the tests
-└── test_results/            # Output figures from the tests
+├── utils.py                 # Helper functions used across tests
+test_images/                 # Images used in the tests
+test_results/                # Output figures from the tests
 ```
 
 ## Requirements
